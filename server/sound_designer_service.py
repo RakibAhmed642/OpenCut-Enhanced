@@ -17,6 +17,7 @@ from socketserver import ThreadingMixIn
 sys.path.insert(0, str(Path(__file__).parent))
 from sound_designer import design_soundtrack, ensure_sound_library, PALETTES, ASSETS_DIR
 from hyperframes_pipeline import create_ai_video, run_cmd
+from youtube_agent_engine import execute_youtube_ready_agent
 
 PORT = 5682
 
@@ -731,6 +732,46 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
 
             try:
                 result = extract_audio_waveform(filepath, num_samples=samples, threshold_db=threshold_db)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode("utf-8"))
+            except Exception as e:
+                err_trace = traceback.format_exc()
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e), "trace": err_trace}).encode("utf-8"))
+
+        elif self.path == "/agent/youtube-ready":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode("utf-8"))
+                return
+
+            video_path = data.get("filepath") or data.get("video_path")
+            if not video_path or not os.path.exists(video_path):
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"File not found: {video_path}"}).encode("utf-8"))
+                return
+
+            output_dir = data.get("output_dir")
+            options = data.get("options") or {}
+
+            try:
+                result = execute_youtube_ready_agent(video_path, output_dir=output_dir, options=options)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self._send_cors_headers()

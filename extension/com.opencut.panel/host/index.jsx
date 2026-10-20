@@ -2267,6 +2267,37 @@ function importMultiTrackToTimeline(configJson) {
         return JSON.stringify({ error: "No active sequence available in Premiere Pro" });
     }
 
+    // 2.5 Place Animated Motion Graphics Overlay on Track V2 (if provided)
+    var overlayPlaced = false;
+    if (cfg.overlayPath) {
+        var oFile = new File(cfg.overlayPath);
+        if (oFile.exists) {
+            var overlayBin = _findOrCreateBin("OpenCut Overlays");
+            if (!overlayBin) overlayBin = targetBin;
+            var overlayItem = _findProjectItemByPath(app.project.rootItem, cfg.overlayPath, 0);
+            if (!overlayItem) {
+                try {
+                    app.project.importFiles([cfg.overlayPath], false, overlayBin, false);
+                    overlayItem = _findProjectItemByPath(app.project.rootItem, cfg.overlayPath, 0);
+                } catch (oe) {
+                    _ocLog("overlay importFiles notice: " + oe.toString());
+                }
+            }
+            if (overlayItem && seq.videoTracks && seq.videoTracks.numTracks >= 2) {
+                try {
+                    var v2Track = seq.videoTracks[1]; // Track V2
+                    var zeroTime = new Time();
+                    zeroTime.ticks = "0";
+                    v2Track.overwriteClip(overlayItem, zeroTime);
+                    overlayPlaced = true;
+                    _ocLog("Overlay placed successfully on Track V2");
+                } catch (oe2) {
+                    _ocLog("Overlay overwriteClip error: " + oe2.toString());
+                }
+            }
+        }
+    }
+
     // 3. Import and place Background Music on Track A2 (if provided)
     if (cfg.musicPath) {
         var mFile = new File(cfg.musicPath);
@@ -2386,8 +2417,17 @@ function importMultiTrackToTimeline(configJson) {
         success: true,
         sequence: seq ? seq.name : "Sequence",
         video: videoItem ? videoItem.name : "Video",
+        overlayPlaced: overlayPlaced,
         sfxCount: sfxPlaced,
-        message: "Multi-track timeline created with separate video, audio, and customizable SFX tracks!"
+        tracksPlaced: {
+            V1: true,
+            V2: overlayPlaced,
+            V3: !!cfg.srtPath,
+            A1: true,
+            A2: !!cfg.musicPath,
+            A3: sfxPlaced > 0
+        },
+        message: "Multi-track YouTube Ready timeline assembled with separate video, motion graphics, audio, and SFX tracks!"
     });
 }
 

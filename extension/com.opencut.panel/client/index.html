@@ -337,17 +337,17 @@
                         </span>
                         <span class="quick-action-tag" aria-hidden="true" data-i18n="quick_actions.preset_tag">Preset</span>
                     </button>
-                    <button type="button" class="quick-action-btn" id="quickYouTube" disabled title="Silence removal + normalize + loudness match" data-i18n="cut.youtube_ready" data-i18n-title="quick_actions.youtube_title">
+                    <button type="button" class="quick-action-btn" id="quickYouTube" disabled title="Autonomous AI YouTube Video Editor & Multi-Track Assembly" data-i18n-title="quick_actions.youtube_title">
                         <span class="quick-action-head">
-                            <span class="quick-action-icon" aria-hidden="true">
+                            <span class="quick-action-icon" aria-hidden="true" style="color: #22d3ee;">
                                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="13" height="11" rx="2.5"/><path d="m8.5 8 4 2-4 2z"/></svg>
                             </span>
                             <span class="quick-action-copy">
-                                <span class="btn-label" data-i18n="cut.youtube_ready">YouTube Ready</span>
-                                <span class="quick-action-meta" data-i18n="quick_actions.youtube_meta">Fast cleanup for creator delivery</span>
+                                <span class="btn-label" style="color: #f8fafc; font-weight: 700;">YouTube Ready</span>
+                                <span class="quick-action-meta">Autonomous multi-track AI editor</span>
                             </span>
                         </span>
-                        <span class="quick-action-tag" aria-hidden="true" data-i18n="quick_actions.preset_tag">Preset</span>
+                        <span class="quick-action-tag" aria-hidden="true" style="background: rgba(34, 211, 238, 0.2); color: #22d3ee; border: 1px solid rgba(34, 211, 238, 0.4); font-weight: 700;">AI Agent</span>
                     </button>
                     <button type="button" class="quick-action-btn" id="quickPodcast" disabled title="Denoise + normalize + loudness match" data-i18n="cut.podcast_polish" data-i18n-title="quick_actions.podcast_title">
                         <span class="quick-action-head">
@@ -1528,6 +1528,95 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- YOUTUBE READY AI AGENT MODAL -->
+                            <div id="youtubeAgentModal" class="hidden" style="position: fixed; inset: 0; z-index: 100000; background: rgba(5, 7, 12, 0.88); backdrop-filter: blur(10px); display: none; align-items: center; justify-content: center; padding: 16px;">
+                                <div style="background: #0b0f19; border: 1px solid rgba(34, 211, 238, 0.35); border-radius: 14px; box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.8), 0 0 30px rgba(34, 211, 238, 0.15); max-width: 480px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(8, 145, 178, 0.15));">
+                                        <div style="display: flex; align-items: center; gap: 9px;">
+                                            <span class="pro-badge" style="background: rgba(34, 211, 238, 0.2); color: #22d3ee; border: 1px solid rgba(34, 211, 238, 0.5); font-weight: 800; font-size: 10.5px; padding: 2px 7px; border-radius: 4px;">AI AGENT</span>
+                                            <span style="font-size: 13px; font-weight: 800; color: #f8fafc; letter-spacing: 0.02em;">YouTube Ready Studio</span>
+                                        </div>
+                                        <button type="button" id="youtubeModalCloseBtn" class="btn-ghost pro-btn-ghost btn-xs" style="padding: 2px 7px; font-size: 15px; line-height: 1; border-radius: 4px; color: #94a3b8; cursor: pointer;">✕</button>
+                                    </div>
+
+                                    <div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+                                        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 10px 12px;">
+                                            <div style="font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Target Sequence / Source Clip</div>
+                                            <div id="ytAgentSourcePath" style="font-size: 12px; font-weight: 600; color: #f1f5f9; word-break: break-all; font-family: monospace;">-</div>
+                                        </div>
+
+                                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span style="font-size: 11px; font-weight: 700; color: #22d3ee; text-transform: uppercase; letter-spacing: 0.04em;">Autonomous Agent Pipeline</span>
+                                                <span id="ytAgentStatusBadge" style="font-size: 10px; font-weight: 700; color: #facc15;">Ready</span>
+                                            </div>
+
+                                            <div id="ytAgentStepsContainer" style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
+                                                <div class="yt-step" id="ytStep1" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>1. Scan Audio &amp; Faster-Whisper Transcription</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep2" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>2. AI Narrative &amp; Pacing Intelligence (Gemini / LLM)</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep3" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>3. Track V1: Dead-Air Cut &amp; Dynamic Punch-in Zooms</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep4" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>4. Track V2: Motion Cards &amp; Animated Subscribe Callout</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep5" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>5. Track V3: Synced Kinetic Captions &amp; Keyword Highlights</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep6" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>6. Tracks A1-A3: Dialogue Leveled (-16 LUFS) &amp; SFX Design</span>
+                                                </div>
+                                                <div class="yt-step" id="ytStep7" style="display: flex; align-items: center; gap: 8px; color: #94a3b8; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                                                    <span class="yt-step-icon" style="color: #64748b; font-weight: bold;">○</span>
+                                                    <span>7. Premiere Pro In-Place Multi-Track Assembly</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div id="ytAgentResultCard" class="hidden" style="background: rgba(34, 211, 238, 0.08); border: 1px solid rgba(34, 211, 238, 0.3); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span id="ytAgentHookTitle" style="font-size: 13px; font-weight: 800; color: #22d3ee;">YouTube Master Ready</span>
+                                                <span id="ytAgentTimeSaved" class="pro-badge" style="background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.5); font-size: 10px;">Saved 0.0s</span>
+                                            </div>
+                                            <div style="font-size: 11px; color: #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                                                <div>• Silence Cuts: <b id="ytStatCuts" style="color: #fff;">0</b></div>
+                                                <div>• Camera Zooms: <b id="ytStatZooms" style="color: #fff;">0</b></div>
+                                                <div>• Motion Cards: <b id="ytStatMotion" style="color: #fff;">0</b></div>
+                                                <div>• SFX Cues: <b id="ytStatSfx" style="color: #fff;">0</b></div>
+                                            </div>
+                                            <div style="font-size: 10px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; margin-top: 2px;">
+                                                Timeline: <b>V1 (Cuts/Zooms)</b>, <b>V2 (Motion Cards)</b>, <b>V3 (Captions)</b>, <b>A1 (Dialogue)</b>, <b>A2 (SFX)</b>, <b>A3 (Music)</b>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style="padding: 12px 16px; background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; gap: 8px;">
+                                        <button type="button" class="btn-primary pro-btn-primary btn-sm" id="ytAgentStartBtn" style="flex: 1; height: 34px; font-weight: 700; background: linear-gradient(135deg, #0891b2, #0284c7);">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                            <span>Run YouTube AI Agent</span>
+                                        </button>
+                                        <button type="button" class="btn-secondary pro-btn-secondary btn-sm hidden" id="ytAgentTimelineBtn" style="flex: 1; height: 34px;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                                            <span>View Timeline</span>
+                                        </button>
+                                        <button type="button" class="btn-ghost pro-btn-ghost btn-sm" id="ytAgentFolderBtn" title="Open Output Folder">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </section>
                 </div>

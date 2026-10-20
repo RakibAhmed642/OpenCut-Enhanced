@@ -21000,7 +21000,210 @@
         var qReels = document.getElementById("quickAutoReels");
         var qHook = document.getElementById("quickAutoHook");
         if (qClean) qClean.addEventListener("click", runCleanupChainPreview);
-        if (qYT) qYT.addEventListener("click", function () { _quickWorkflow("YouTube Upload"); });
+        
+        // --- YouTube Ready Autonomous AI Agent Studio ---
+        function openYouTubeAgentModal() {
+            var modal = document.getElementById("youtubeAgentModal");
+            if (!modal) return;
+            var pathEl = document.getElementById("ytAgentSourcePath");
+            if (pathEl) {
+                pathEl.textContent = selectedPath || "(No clip selected — please select a clip or active sequence)";
+            }
+            var startBtn = document.getElementById("ytAgentStartBtn");
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.classList.remove("hidden");
+                startBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Run YouTube AI Agent</span>';
+            }
+            var timelineBtn = document.getElementById("ytAgentTimelineBtn");
+            if (timelineBtn) timelineBtn.classList.add("hidden");
+            var resultCard = document.getElementById("ytAgentResultCard");
+            if (resultCard) resultCard.classList.add("hidden");
+            var statusBadge = document.getElementById("ytAgentStatusBadge");
+            if (statusBadge) {
+                statusBadge.textContent = "Ready";
+                statusBadge.style.color = "#facc15";
+            }
+            for (var s = 1; s <= 7; s++) {
+                var el = document.getElementById("ytStep" + s);
+                if (el) {
+                    el.style.color = "#94a3b8";
+                    el.style.background = "rgba(255,255,255,0.02)";
+                    var icon = el.querySelector(".yt-step-icon");
+                    if (icon) { icon.textContent = "○"; icon.style.color = "#64748b"; }
+                }
+            }
+            modal.style.display = "flex";
+            modal.classList.remove("hidden");
+        }
+
+        function closeYouTubeAgentModal() {
+            var modal = document.getElementById("youtubeAgentModal");
+            if (modal) {
+                modal.style.display = "none";
+                modal.classList.add("hidden");
+            }
+        }
+
+        var _lastYtOutputFolder = "";
+
+        function runYouTubeAgentPipeline() {
+            if (!selectedPath) {
+                showAlert(t("toast.select_clip_first", "Select a clip first or open a sequence."));
+                return;
+            }
+
+            var startBtn = document.getElementById("ytAgentStartBtn");
+            var timelineBtn = document.getElementById("ytAgentTimelineBtn");
+            var statusBadge = document.getElementById("ytAgentStatusBadge");
+            var resultCard = document.getElementById("ytAgentResultCard");
+
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:6px;"></span> Executing YouTube AI Agent...';
+            }
+
+            function setStep(stepNum, status) {
+                var el = document.getElementById("ytStep" + stepNum);
+                if (!el) return;
+                var icon = el.querySelector(".yt-step-icon");
+                if (status === "active") {
+                    el.style.color = "#22d3ee";
+                    el.style.background = "rgba(34, 211, 238, 0.1)";
+                    if (icon) { icon.textContent = "▶"; icon.style.color = "#22d3ee"; }
+                } else if (status === "done") {
+                    el.style.color = "#4ade80";
+                    el.style.background = "rgba(74, 222, 128, 0.06)";
+                    if (icon) { icon.textContent = "✓"; icon.style.color = "#4ade80"; }
+                } else {
+                    el.style.color = "#94a3b8";
+                    el.style.background = "rgba(255,255,255,0.02)";
+                    if (icon) { icon.textContent = "○"; icon.style.color = "#64748b"; }
+                }
+            }
+
+            setStep(1, "active");
+            if (statusBadge) { statusBadge.textContent = "Whisper Ingestion & Audio Scan"; statusBadge.style.color = "#22d3ee"; }
+
+            setTimeout(function() {
+                setStep(1, "done");
+                setStep(2, "active");
+                if (statusBadge) { statusBadge.textContent = "Gemini / AI Narrative Planning..."; }
+            }, 1200);
+
+            setTimeout(function() {
+                setStep(2, "done");
+                setStep(3, "active");
+                if (statusBadge) { statusBadge.textContent = "Cutting Dead-Air & Dynamic Zooms..."; }
+            }, 2500);
+
+            fetch("http://127.0.0.1:5682/agent/youtube-ready", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    filepath: selectedPath,
+                    output_dir: projectFolder,
+                    options: {
+                        aspect_ratio: "16:9",
+                        remove_silence: true,
+                        auto_zoom: true,
+                        sound_design: true,
+                        add_captions: true,
+                        add_motion_graphics: true
+                    }
+                })
+            })
+            .then(function (r) {
+                if (!r.ok) {
+                    return r.json().then(function (err) { throw new Error(err.error || ("HTTP " + r.status)); });
+                }
+                return r.json();
+            })
+            .then(function (res) {
+                setStep(3, "done");
+                setStep(4, "done");
+                setStep(5, "done");
+                setStep(6, "done");
+                setStep(7, "active");
+                if (statusBadge) { statusBadge.textContent = "Assembling Premiere Timeline..."; }
+
+                var multiConfig = res.multi_track_config;
+                if (multiConfig && multiConfig.videoPath) {
+                    _lastYtOutputFolder = multiConfig.videoPath;
+                }
+
+                jsx("importMultiTrackToTimeline", [JSON.stringify(multiConfig)], function (jsxRes) {
+                    setStep(7, "done");
+                    if (statusBadge) {
+                        statusBadge.textContent = "Complete & Populated!";
+                        statusBadge.style.color = "#4ade80";
+                    }
+                    if (startBtn) {
+                        startBtn.disabled = false;
+                        startBtn.classList.add("hidden");
+                    }
+                    if (timelineBtn) {
+                        timelineBtn.classList.remove("hidden");
+                    }
+
+                    if (resultCard) {
+                        resultCard.classList.remove("hidden");
+                        var titleEl = document.getElementById("ytAgentHookTitle");
+                        var savedEl = document.getElementById("ytAgentTimeSaved");
+                        var cutsEl = document.getElementById("ytStatCuts");
+                        var zoomsEl = document.getElementById("ytStatZooms");
+                        var motionEl = document.getElementById("ytStatMotion");
+                        var sfxEl = document.getElementById("ytStatSfx");
+
+                        if (titleEl) titleEl.textContent = res.hook_title || "YouTube Master";
+                        if (savedEl) savedEl.textContent = "Saved " + (res.time_saved || 0) + "s";
+                        if (cutsEl) cutsEl.textContent = res.silence_cuts || 0;
+                        if (zoomsEl) zoomsEl.textContent = res.zoom_count || 0;
+                        if (motionEl) motionEl.textContent = res.motion_cards_count || 0;
+                        if (sfxEl) sfxEl.textContent = res.sfx_events_count || 0;
+                    }
+
+                    showToast("YouTube AI Agent finished: Multi-track timeline assembled!", "success");
+                });
+            })
+            .catch(function (err) {
+                console.error("YouTube Agent error:", err);
+                if (statusBadge) {
+                    statusBadge.textContent = "Failed: " + (err.message || err);
+                    statusBadge.style.color = "#ef4444";
+                }
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = '<span>Retry YouTube AI Agent</span>';
+                }
+                showAlert("YouTube Agent error: " + (err.message || err));
+            });
+        }
+
+        // Wire modal buttons
+        var ytModalClose = document.getElementById("youtubeModalCloseBtn");
+        var ytModalStart = document.getElementById("ytAgentStartBtn");
+        var ytModalTimeline = document.getElementById("ytAgentTimelineBtn");
+        var ytModalFolder = document.getElementById("ytAgentFolderBtn");
+
+        if (ytModalClose) ytModalClose.addEventListener("click", closeYouTubeAgentModal);
+        if (ytModalStart) ytModalStart.addEventListener("click", runYouTubeAgentPipeline);
+        if (ytModalTimeline) ytModalTimeline.addEventListener("click", function() {
+            closeYouTubeAgentModal();
+            try { jsx("evalScript", ["app.activeSequence ? app.activeSequence.name : ''"]); } catch (e) {}
+        });
+        if (ytModalFolder) ytModalFolder.addEventListener("click", function() {
+            var target = _lastYtOutputFolder || selectedPath || projectFolder;
+            if (target) {
+                fetch("http://127.0.0.1:5682/system/reveal", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ path: target })
+                });
+            }
+        });
+
+          if (qYT) qYT.addEventListener("click", openYouTubeAgentModal);
         if (qPod) qPod.addEventListener("click", function () { _quickWorkflow("Podcast Polish"); });
         if (qReels) qReels.addEventListener("click", function () {
             var tabBtn = document.getElementById("subTabAutoReels");
