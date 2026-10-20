@@ -21372,9 +21372,13 @@
                         aspect_ratio: "16:9",
                         remove_silence: true,
                         auto_zoom: true,
-                        sound_design: true,
+                        sound_design: (document.getElementById("ytAiAllowSfx") || {}).checked !== false,
                         add_captions: true,
-                        add_motion_graphics: true
+                        add_motion_graphics: (document.getElementById("ytAiAllowMotion") || {}).checked !== false,
+                        ai_allow_videos: (document.getElementById("ytAiAllowVideos") || {}).checked !== false,
+                        ai_allow_sfx: (document.getElementById("ytAiAllowSfx") || {}).checked !== false,
+                        ai_allow_gifs: (document.getElementById("ytAiAllowGifs") || {}).checked !== false,
+                        ai_allow_motion: (document.getElementById("ytAiAllowMotion") || {}).checked !== false
                     }
                 })
             })

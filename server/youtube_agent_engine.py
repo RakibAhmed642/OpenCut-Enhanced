@@ -49,12 +49,15 @@ except ImportError:
     score_sentence_hook = None
 
 try:
+    from free_media_service import search_free_media, download_and_prepare_media
     from sound_designer import (
         ensure_sound_library,
         detect_silence_pauses,
         get_media_duration
     )
 except ImportError:
+    search_free_media = None
+    download_and_prepare_media = None
     ensure_sound_library = None
     detect_silence_pauses = None
     get_media_duration = None
@@ -306,13 +309,32 @@ def _heuristic_youtube_plan(
         "incredible", "premiere", "secret", "timeline", "magic"
     ]
 
+    media_inserts = []
+    if total_duration > 15.0:
+        media_inserts.append({
+            "type": "video",
+            "query": "cinematic nature",
+            "start": round(min(12.0, total_duration * 0.25), 2),
+            "duration": 4.0,
+            "reason": "AI B-Roll Cutaway"
+        })
+    if total_duration > 25.0:
+        media_inserts.append({
+            "type": "gif",
+            "query": "mind blown",
+            "start": round(min(26.0, total_duration * 0.55), 2),
+            "duration": 2.5,
+            "reason": "AI Reaction Meme"
+        })
+
     return {
         "hook_title": best_hook_text,
         "hook_badge": "YOUTUBE READY",
         "zoom_events": zoom_events,
         "motion_cards": motion_cards,
         "sfx_cues": sfx_cues,
-        "highlight_keywords": highlight_keywords
+        "highlight_keywords": highlight_keywords,
+        "media_inserts": media_inserts
     }
 
 
@@ -813,6 +835,50 @@ def execute_youtube_ready_agent(
         base_name=base_name
     )
 
+    # 8.5 Contextual Media Auto-Insertion (User Controlled)
+    allow_videos = options.get("ai_allow_videos", True)
+    allow_sfx = options.get("ai_allow_sfx", True)
+    allow_gifs = options.get("ai_allow_gifs", True)
+    allow_motion = options.get("ai_allow_motion", True)
+
+    media_events = []
+    planned_inserts = ai_plan.get("media_inserts", [])
+    for ins in planned_inserts:
+        itype = ins.get("type", "video")
+        if itype == "video" and not allow_videos:
+            continue
+        if itype == "gif" and not allow_gifs:
+            continue
+
+        try:
+            m_results = search_free_media(media_type=itype, query=ins.get("query", ""))
+            if m_results:
+                best = m_results[0]
+                dl_res = download_and_prepare_media(
+                    media_url=best.get("path") or best.get("url"),
+                    title=best.get("title", "AI Media"),
+                    media_type=itype
+                )
+                if dl_res and dl_res.get("local_path"):
+                    media_events.append({
+                        "filepath": dl_res["local_path"],
+                        "trackType": "video",
+                        "trackIndex": 1,
+                        "time": ins.get("start", 0.0),
+                        "duration": ins.get("duration", 4.0),
+                        "title": ins.get("reason", "AI Media")
+                    })
+        except Exception as mie:
+            sys.stderr.write(f"[YouTube Agent] Notice downloading media insert: {mie}\n")
+
+    # If user disabled motion cards, skip intro hook card overlay
+    if not allow_motion:
+        v2_final = None
+
+    # If user disabled SFX, clear SFX stem
+    if not allow_sfx:
+        audio_stems["sfx_stem"] = None
+
     # 9. Verify Multi-Track Deliverables
     v1_final = v1_output_path if os.path.exists(v1_output_path) else str(input_p)
     v2_final = v2_output_path if os.path.exists(v2_output_path) else None
@@ -832,7 +898,8 @@ def execute_youtube_ready_agent(
         "seqName": f"OpenCut - {base_name} (YouTube Ready)",
         "createNewSequence": True,
         "placeIndividualSfx": False,
-        "zoomEvents": ai_plan.get("zoom_events", [])
+        "zoomEvents": ai_plan.get("zoomEvents", ai_plan.get("zoom_events", [])),
+        "mediaEvents": media_events
     }
 
     return {

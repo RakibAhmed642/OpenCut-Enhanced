@@ -2298,6 +2298,39 @@ function importMultiTrackToTimeline(configJson) {
         }
     }
 
+
+    // 2.7 Place AI Contextual Media Events (B-Roll Videos, Meme GIFs) on Track V2
+    if (cfg.mediaEvents && cfg.mediaEvents.length > 0) {
+        var aiMediaBin = _findOrCreateBin("OpenCut AI Media");
+        if (!aiMediaBin) aiMediaBin = targetBin;
+        for (var mIdx = 0; mIdx < cfg.mediaEvents.length; mIdx++) {
+            var mEv = cfg.mediaEvents[mIdx];
+            if (!mEv.filepath) continue;
+            var mFileCheck = new File(mEv.filepath);
+            if (!mFileCheck.exists) continue;
+
+            var mItem = _findProjectItemByPath(app.project.rootItem, mEv.filepath, 0);
+            if (!mItem) {
+                try {
+                    app.project.importFiles([mEv.filepath], false, aiMediaBin, false);
+                    mItem = _findProjectItemByPath(app.project.rootItem, mEv.filepath, 0);
+                } catch (mImportErr) {}
+            }
+
+            if (mItem && seq.videoTracks && seq.videoTracks.numTracks >= 2) {
+                try {
+                    var v2Track = seq.videoTracks[1];
+                    var mTime = new Time();
+                    mTime.seconds = Number(mEv.time || 0);
+                    v2Track.overwriteClip(mItem, mTime);
+                    _ocLog("AI Media inserted at " + mTime.seconds + "s: " + mFileCheck.name);
+                } catch (mOverErr) {
+                    _ocLog("AI Media overwriteClip error: " + mOverErr.toString());
+                }
+            }
+        }
+    }
+
     // 3. Import and place Background Music on Track A2 (if provided)
     if (cfg.musicPath) {
         var mFile = new File(cfg.musicPath);
