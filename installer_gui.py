@@ -119,7 +119,7 @@ class OpenCutMinimalInstaller:
         sub_lbl = tk.Label(
             header,
             text="Automatic Setup & 1-Click Extension Installer for Adobe Premiere Pro",
-            font=("Segoe UI", 9.5),
+            font=("Segoe UI", 10),
             fg=TEXT_MUTED,
             bg=BG_DARK
         )
