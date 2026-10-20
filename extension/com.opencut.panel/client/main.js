@@ -14336,11 +14336,11 @@
 
                 var left = document.createElement("div");
                 left.style.cssText = "flex: 1; min-width: 0; padding-right: 8px;";
-                left.innerHTML = "<div style="font-size: 11px; font-weight: 600; color: #f1f5f9; display: flex; align-items: center; gap: 6px;">" +
-                    "<span>" + (sk.name || "Custom Skill") + "</span>" +
-                    (sk.category ? "<span style="font-size: 8.5px; padding: 1px 5px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; text-transform: uppercase;">" + sk.category + "</span>" : "") +
-                    "</div>" +
-                    "<div style="font-size: 10px; color: #94a3b8; margin-top: 2px; line-height: 1.3;">" + (sk.description || (sk.system_prompt ? sk.system_prompt.slice(0, 100) + "..." : "")) + "</div>";
+                left.innerHTML = '<div style="font-size: 11px; font-weight: 600; color: #f1f5f9; display: flex; align-items: center; gap: 6px;">' +
+                    '<span>' + (sk.name || "Custom Skill") + '</span>' +
+                    (sk.category ? '<span style="font-size: 8.5px; padding: 1px 5px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; text-transform: uppercase;">' + sk.category + '</span>' : '') +
+                    '</div>' +
+                    '<div style="font-size: 10px; color: #94a3b8; margin-top: 2px; line-height: 1.3;">' + (sk.description || (sk.system_prompt ? sk.system_prompt.slice(0, 100) + "..." : "")) + '</div>';
 
                 var right = document.createElement("div");
                 right.style.cssText = "display: flex; align-items: center; gap: 6px;";
