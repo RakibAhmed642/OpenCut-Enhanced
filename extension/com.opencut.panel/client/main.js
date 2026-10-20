@@ -17014,7 +17014,8 @@
                 filepath: selectedPath,
                 start_time: clip.start,
                 end_time: clip.end,
-                aspect_ratio: aspectOption,
+                aspect_ratio: (aspectOption.indexOf("1:1") !== -1 ? "1:1" : (aspectOption.indexOf("original") !== -1 ? "original" : "9:16")),
+                layout_mode: (aspectOption.indexOf("blur") !== -1 ? "blur_background" : (aspectOption.indexOf("split") !== -1 ? "split_screen" : (aspectOption.indexOf("original") !== -1 ? "original" : "crop_center"))),
                 remove_silence: removeSilence,
                 auto_zoom: autoZoom,
                 zoom_style: zoomStyle,
@@ -17032,7 +17033,11 @@
                 ai_provider: (window._aiConfig && window._aiConfig.provider) || "gemini",
                 api_key: (window._aiConfig && window._aiConfig.api_key) || "",
                 ai_model: (window._aiConfig && window._aiConfig.model) || "gemini-2.5-flash",
-                custom_endpoint: (window._aiConfig && window._aiConfig.custom_endpoint) || ""
+                custom_endpoint: (window._aiConfig && window._aiConfig.custom_endpoint) || "",
+                ai_allow_videos: (document.getElementById("reelAiAllowVideos") ? document.getElementById("reelAiAllowVideos").checked : true),
+                ai_allow_sfx: (document.getElementById("reelAiAllowSfx") ? document.getElementById("reelAiAllowSfx").checked : true),
+                ai_allow_gifs: (document.getElementById("reelAiAllowGifs") ? document.getElementById("reelAiAllowGifs").checked : true),
+                ai_allow_motion: (document.getElementById("reelAiAllowMotion") ? document.getElementById("reelAiAllowMotion").checked : true)
             })
         }).then(function (r) {
             if (!r.ok) throw new Error("HTTP " + r.status);
@@ -17058,7 +17063,7 @@
 
             finalizeReelSuccess(res.video_path, clip, aspectOption, addCaptions, autoZoom, removeSilence, enableSoundDesign, importPremiere, captionStyle, zoomStyle, res.srt_path, res.sfx_stem_path);
             if (importPremiere && inPremiere) {
-                tryImportReelToTimeline(res.video_path, res.srt_path, res.sfx_stem_path, clip.title, autoZoom, zoomStyle, zoomScale);
+                tryImportReelToTimeline(res.video_path, res.srt_path, res.sfx_stem_path, clip.title, autoZoom, zoomStyle, zoomScale, res.multi_track_config);
             }
         }).catch(function (err) {
             console.error("Single reel creation error:", err);
@@ -17135,7 +17140,8 @@
                     filepath: selectedPath,
                     start_time: currentClip.start,
                     end_time: currentClip.end,
-                    aspect_ratio: aspectOption,
+                    aspect_ratio: (aspectOption.indexOf("1:1") !== -1 ? "1:1" : (aspectOption.indexOf("original") !== -1 ? "original" : "9:16")),
+                    layout_mode: (aspectOption.indexOf("blur") !== -1 ? "blur_background" : (aspectOption.indexOf("split") !== -1 ? "split_screen" : (aspectOption.indexOf("original") !== -1 ? "original" : "crop_center"))),
                     remove_silence: removeSilence,
                     auto_zoom: autoZoom,
                     zoom_style: zoomStyle,
@@ -17153,12 +17159,16 @@
                     ai_provider: (window._aiConfig && window._aiConfig.provider) || "gemini",
                     api_key: (window._aiConfig && window._aiConfig.api_key) || "",
                     ai_model: (window._aiConfig && window._aiConfig.model) || "gemini-2.5-flash",
-                    custom_endpoint: (window._aiConfig && window._aiConfig.custom_endpoint) || ""
+                    custom_endpoint: (window._aiConfig && window._aiConfig.custom_endpoint) || "",
+                    ai_allow_videos: (document.getElementById("reelAiAllowVideos") ? document.getElementById("reelAiAllowVideos").checked : true),
+                    ai_allow_sfx: (document.getElementById("reelAiAllowSfx") ? document.getElementById("reelAiAllowSfx").checked : true),
+                    ai_allow_gifs: (document.getElementById("reelAiAllowGifs") ? document.getElementById("reelAiAllowGifs").checked : true),
+                    ai_allow_motion: (document.getElementById("reelAiAllowMotion") ? document.getElementById("reelAiAllowMotion").checked : true)
                 })
             }).then(function (r) { return r.json(); }).then(function (res) {
                 if (res && res.status === "success" && res.video_path) {
                     if (importPremiere && inPremiere) {
-                        tryImportReelToTimeline(res.video_path, res.srt_path, res.sfx_stem_path, currentClip.title, autoZoom, zoomStyle, zoomScale);
+                        tryImportReelToTimeline(res.video_path, res.srt_path, res.sfx_stem_path, currentClip.title, autoZoom, zoomStyle, zoomScale, res.multi_track_config);
                     }
                     if (idx === selectedList.length - 1) {
                         finalizeReelSuccess(res.video_path, currentClip, aspectOption, addCaptions, autoZoom, removeSilence, enableSoundDesign, importPremiere, captionStyle, zoomStyle);
@@ -17195,9 +17205,9 @@
         }
     }
 
-    function tryImportReelToTimeline(videoPath, srtPath, sfxPath, title, autoZoom, zoomStyle, zoomScale) {
+    function tryImportReelToTimeline(videoPath, srtPath, sfxPath, title, autoZoom, zoomStyle, zoomScale, directConfig) {
         if (!inPremiere || !videoPath) return;
-        var multiTrackConfig = {
+        var multiTrackConfig = directConfig || {
             videoPath: videoPath,
             sfxStemPath: sfxPath || null,
             srtPath: srtPath || null,

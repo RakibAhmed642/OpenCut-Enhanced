@@ -1369,11 +1369,13 @@
                                                 </select>
                                             </div>
                                             <div class="pro-field">
-                                                <label class="pro-label" for="reelAspectRatio" style="font-size: 10px;">Framing</label>
+                                                <label class="pro-label" for="reelAspectRatio" style="font-size: 10px;">Framing Layout</label>
                                                 <select id="reelAspectRatio" class="pro-select" style="font-size: 11px; padding: 4px 8px;">
-                                                    <option value="9:16" selected>9:16 Vertical</option>
-                                                    <option value="1:1">1:1 Square</option>
-                                                    <option value="original">Original</option>
+                                                    <option value="9:16" selected>9:16 Center Face Crop</option>
+                                                    <option value="9:16_blur">9:16 Blurred Background (No Crop)</option>
+                                                    <option value="9:16_split">9:16 Split Screen (Top/Bottom)</option>
+                                                    <option value="1:1">1:1 Square (Social Feed)</option>
+                                                    <option value="original">Original Aspect Ratio</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -1386,6 +1388,32 @@
                                         </label>
                                     </div>
 
+                                    <!-- AI Auto-Edit Media Permissions -->
+                                    <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 8px; margin-top: 2px;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                            <span style="font-size: 10px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">AI Media Permissions</span>
+                                            <span style="font-size: 9px; color: #94a3b8;">User Control</span>
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                                            <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+                                                <input type="checkbox" id="reelAiAllowVideos" checked style="accent-color: #0284c7;">
+                                                <span>Auto B-Roll</span>
+                                            </label>
+                                            <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+                                                <input type="checkbox" id="reelAiAllowSfx" checked style="accent-color: #0284c7;">
+                                                <span>Auto SFX</span>
+                                            </label>
+                                            <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+                                                <input type="checkbox" id="reelAiAllowGifs" checked style="accent-color: #0284c7;">
+                                                <span>Reaction GIFs</span>
+                                            </label>
+                                            <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+                                                <input type="checkbox" id="reelAiAllowMotion" checked style="accent-color: #0284c7;">
+                                                <span>Motion Cards</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
                                     <!-- Sound Design & Timeline Output -->
                                     <div style="display: flex; flex-direction: column; gap: 6px;">
                                         <label class="oc-switch-label">
@@ -1396,7 +1424,7 @@
                                             </div>
                                         </label>
                                         <label class="oc-switch-label">
-                                            <span style="font-size: 11.5px;">Add to Premiere Timeline</span>
+                                            <span style="font-size: 11.5px;">Add to Premiere Timeline (Multi-Track)</span>
                                             <div class="oc-switch">
                                                 <input type="checkbox" id="reelImportToPremiere" checked>
                                                 <span class="oc-slider"></span>

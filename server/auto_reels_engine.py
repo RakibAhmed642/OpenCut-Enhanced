@@ -30,6 +30,11 @@ FFPROBE = str(BASE_DIR / "ffmpeg" / "ffprobe.exe")
 # Import Sound Designer
 sys.path.insert(0, str(BASE_DIR / "server"))
 from sound_designer import design_soundtrack, PALETTES
+try:
+    from free_media_service import search_free_media, download_and_prepare_media
+except Exception:
+    search_free_media = None
+    download_and_prepare_media = None
 
 def run_cmd(cmd: str, cwd: Optional[str] = None) -> Tuple[int, str, str]:
     """Execute shell command with captured stdout/stderr."""
@@ -503,6 +508,7 @@ def create_auto_reel(
     filepath: str,
     target_duration: float = 30.0,
     aspect_ratio: str = "9:16",
+    layout_mode: str = "crop_center",
     remove_silence: bool = True,
     auto_zoom: bool = True,
     zoom_style: str = "jump",
@@ -522,7 +528,11 @@ def create_auto_reel(
     ai_provider: Optional[str] = None,
     api_key: Optional[str] = None,
     ai_model: Optional[str] = None,
-    custom_endpoint: Optional[str] = None
+    custom_endpoint: Optional[str] = None,
+    ai_allow_videos: bool = True,
+    ai_allow_sfx: bool = True,
+    ai_allow_gifs: bool = True,
+    ai_allow_motion: bool = True
 ) -> Dict[str, Any]:
     """
     Main Autonomous Auto Reels generation entry point.
@@ -556,6 +566,7 @@ def create_auto_reel(
 
     reel_duration = best_end - best_start
     is_audio_only = probe.get("is_audio_only", False)
+    has_audio = probe.get("has_audio", False)
 
     # 2. Silencer Engine: Detect & Trim Silence/Dead-Air Intervals within [best_start, best_end]
     active_segments = []
@@ -663,39 +674,75 @@ def create_auto_reel(
             s_ed = seg["end"]
             z = seg["zoom"]
 
-            # Framing & Crop filter for segment
+            # Framing & Layout filter for segment
+            norm_layout = str(layout_mode or "crop_center").lower().strip()
             if aspect_ratio == "9:16":
-                if z > 1.02:
-                    crop_w_expr = f"(ih*9/16)/{z:.3f}"
-                    crop_h_expr = f"ih/{z:.3f}"
-                    seg_vf = f"crop={crop_w_expr}:{crop_h_expr}:(iw-{crop_w_expr})/2:(ih-{crop_h_expr})/2,scale=1080:1920:flags=lanczos,setsar=1,fps=30"
+                if "blur" in norm_layout:
+                    # Blurred Background with original footage centered in 9:16
+                    seg_vf = (
+                        f"split=2[bg_src{i}][fg_src{i}];"
+                        f"[bg_src{i}]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg{i}];"
+                        f"[fg_src{i}]scale=1080:-1[fg{i}];"
+                        f"[bg{i}][fg{i}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30"
+                    )
+                elif "split" in norm_layout:
+                    # Split Screen: Top Face / Bottom Action or mirroring
+                    seg_vf = (
+                        f"split=2[sp_top_src{i}][sp_bot_src{i}];"
+                        f"[sp_top_src{i}]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[sp_top{i}];"
+                        f"[sp_bot_src{i}]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,hflip[sp_bot{i}];"
+                        f"[sp_top{i}][sp_bot{i}]vstack=inputs=2,setsar=1,fps=30"
+                    )
+                elif norm_layout == "original":
+                    seg_vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(1080-iw)/2:(1920-ih)/2:black,setsar=1,fps=30"
                 else:
-                    crop_w_expr = "ih*9/16"
-                    seg_vf = f"crop={crop_w_expr}:ih:(iw-{crop_w_expr})/2:0,scale=1080:1920:flags=lanczos,setsar=1,fps=30"
+                    # Default: Center Face Crop with dynamic punch-in zoom
+                    if z > 1.02:
+                        crop_w_expr = f"(ih*9/16)/{z:.3f}"
+                        crop_h_expr = f"ih/{z:.3f}"
+                        seg_vf = f"crop={crop_w_expr}:{crop_h_expr}:(iw-{crop_w_expr})/2:(ih-{crop_h_expr})/2,scale=1080:1920:flags=lanczos,setsar=1,fps=30"
+                    else:
+                        crop_w_expr = "ih*9/16"
+                        seg_vf = f"crop={crop_w_expr}:ih:(iw-{crop_w_expr})/2:0,scale=1080:1920:flags=lanczos,setsar=1,fps=30"
             elif aspect_ratio == "1:1":
-                if z > 1.02:
+                if "blur" in norm_layout:
+                    seg_vf = (
+                        f"split=2[bg_src{i}][fg_src{i}];"
+                        f"[bg_src{i}]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,boxblur=25:5[bg{i}];"
+                        f"[fg_src{i}]scale=1080:-1[fg{i}];"
+                        f"[bg{i}][fg{i}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30"
+                    )
+                elif z > 1.02:
                     crop_sq_expr = f"min(iw\\,ih)/{z:.3f}"
                     seg_vf = f"crop={crop_sq_expr}:{crop_sq_expr}:(iw-{crop_sq_expr})/2:(ih-{crop_sq_expr})/2,scale=1080:1080:flags=lanczos,setsar=1,fps=30"
                 else:
                     seg_vf = "crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2,scale=1080:1080:flags=lanczos,setsar=1,fps=30"
-            else: # 16:9
+            else: # original / 16:9
                 if z > 1.02:
                     seg_vf = f"crop=iw/{z:.3f}:ih/{z:.3f}:(iw-iw/{z:.3f})/2:(ih-ih/{z:.3f})/2,scale=1920:1080:flags=lanczos,setsar=1,fps=30"
                 else:
                     seg_vf = "scale=1920:1080:flags=lanczos,setsar=1,fps=30"
 
             filter_parts.append(f"[0:v]trim=start={s_st:.3f}:end={s_ed:.3f},setpts=PTS-STARTPTS,{seg_vf}[v{i}]")
-            filter_parts.append(f"[0:a]atrim=start={s_st:.3f}:end={s_ed:.3f},asetpts=PTS-STARTPTS[a{i}]")
-            concat_inputs.append(f"[v{i}][a{i}]")
+            if has_audio:
+                filter_parts.append(f"[0:a]atrim=start={s_st:.3f}:end={s_ed:.3f},asetpts=PTS-STARTPTS[a{i}]")
+                concat_inputs.append(f"[v{i}][a{i}]")
+            else:
+                concat_inputs.append(f"[v{i}]")
 
-        filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(processed_segments)}:v=1:a=1[vraw][araw]")
-        filter_parts.append(f"[araw]{af_str}[aout]")
+        if has_audio:
+            filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(processed_segments)}:v=1:a=1[vraw][araw]")
+            filter_parts.append(f"[araw]{af_str}[aout]")
+            audio_map = '-map "[aout]" -c:a aac -b:a 192k'
+        else:
+            filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(processed_segments)}:v=1:a=0[vraw]")
+            audio_map = "-an"
         filter_str = ";".join(filter_parts)
 
         cmd = (
             f'"{FFMPEG}" -y -i "{input_path}" '
-            f'-filter_complex "{filter_str}" -map "[vraw]" -map "[aout]" '
-            f'-c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k '
+            f'-filter_complex "{filter_str}" -map "[vraw]" {audio_map} '
+            f'-c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p '
             f'"{raw_reel_path}"'
         )
 
@@ -722,6 +769,84 @@ def create_auto_reel(
                 sfx_events = sd_res.get("events", [])
         except Exception as sde:
             sys.stderr.write(f"Sound design pass notice: {sde}\n")
+
+    # 6.5 Render Track V2: Animated Progress Bar & Glassmorphic Hook Card (Transparent .mov)
+    overlay_mov_path = None
+    if ai_allow_motion:
+        try:
+            overlay_mov_name = f"{base_name}_reel_{ts}_v2_motion.mov"
+            overlay_mov_file = out_folder / overlay_mov_name
+            # Choose dimensions based on aspect ratio
+            if aspect_ratio == "1:1":
+                mw, mh = 1080, 1080
+                card_y = 120
+                bar_y = 1060
+            elif aspect_ratio == "16:9":
+                mw, mh = 1920, 1080
+                card_y = 80
+                bar_y = 1060
+            else: # 9:16 vertical
+                mw, mh = 1080, 1920
+                card_y = 220
+                bar_y = 1890
+
+            # Dynamic hook card & bottom progress bar
+            hook_text = "WATCH UNTIL THE END"
+            badge_text = "VIRAL REEL"
+            card_w = min(900, int(mw * 0.82))
+            card_h = 160
+            card_x = int((mw - card_w) / 2)
+
+            # Animated progress bar across entire reel duration
+            pbar_filter = f"drawbox=x=0:y={bar_y}:w={mw}*t/{max(1.0, reel_duration)}:h=18:color=0x22D3EE@0.95:t=fill"
+
+            # Hook card displayed for first 4.0 seconds of the reel
+            card_filter = (
+                f"drawbox=x={card_x}:y={card_y}:w={card_w}:h={card_h}:color=black@0.75:t=fill:enable='between(t,0,4.0)',"
+                f"drawbox=x={card_x}:y={card_y}:w={card_w}:h={card_h}:color=0x22D3EE@0.9:t=4:enable='between(t,0,4.0)',"
+                f"drawbox=x={int((mw-220)/2)}:y={card_y-18}:w=220:h=36:color=0x22D3EE:t=fill:enable='between(t,0,4.0)',"
+                f"drawtext=text='{badge_text}':fontsize=20:fontcolor=black:x=(w-text_w)/2:y={card_y-10}:enable='between(t,0,4.0)',"
+                f"drawtext=text='{hook_text}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y={card_y+65}:enable='between(t,0,4.0)'"
+            )
+
+            cmd_v2 = [
+                FFMPEG, "-y", "-f", "lavfi",
+                "-i", f"color=c=black@0.0:s={mw}x{mh}:d={reel_duration:.2f}",
+                "-vf", f"{pbar_filter},{card_filter}",
+                "-c:v", "qtrle", str(overlay_mov_file)
+            ]
+            res_v2 = subprocess.run(cmd_v2, capture_output=True, text=True)
+            if res_v2.returncode == 0 and overlay_mov_file.exists() and overlay_mov_file.stat().st_size > 1000:
+                overlay_mov_path = str(overlay_mov_file)
+        except Exception as ove:
+            sys.stderr.write(f"V2 Motion graphic overlay notice: {ove}\n")
+
+    # 6.7 Contextual Media Auto-Insertion (B-Roll or Meme GIF on V2 punchline)
+    media_events = []
+    if (ai_allow_videos or ai_allow_gifs) and search_free_media and download_and_prepare_media:
+        try:
+            m_type = "gif" if ai_allow_gifs else "video"
+            m_query = "reaction" if m_type == "gif" else "action"
+            search_items = search_free_media(media_type=m_type, query=m_query)
+            if search_items:
+                chosen = search_items[0]
+                dl_res = download_and_prepare_media(
+                    media_url=chosen.get("path") or chosen.get("url"),
+                    title=chosen.get("title", "Reel AI Media"),
+                    media_type=m_type
+                )
+                if dl_res and dl_res.get("local_path"):
+                    ins_time = round(max(1.0, min(reel_duration - 3.5, reel_duration * 0.45)), 2)
+                    media_events.append({
+                        "filepath": dl_res["local_path"],
+                        "trackType": "video",
+                        "trackIndex": 1,
+                        "time": ins_time,
+                        "duration": 3.0,
+                        "title": chosen.get("title", "AI Media Punchline")
+                    })
+        except Exception as mie:
+            sys.stderr.write(f"Contextual media auto-insert notice: {mie}\n")
 
     # 6. Word-by-Word Kinetic Captions Pass
     srt_path = None
@@ -808,12 +933,42 @@ def create_auto_reel(
     actual_probe = probe_video(str(final_video_path))
     actual_dur = actual_probe.get("duration", reel_duration)
 
+    # 8. Assemble Premiere Pro Multi-Track Reel Configuration
+    clean_sfx_path = str(sfx_stem_path) if (ai_allow_sfx and sfx_stem_path and sfx_stem_path.exists()) else None
+    clean_overlay_path = overlay_mov_path if (ai_allow_motion and overlay_mov_path and os.path.exists(overlay_mov_path)) else None
+
+    # Determine sequence dimensions
+    seq_w = 1080
+    seq_h = 1920
+    if aspect_ratio == "1:1":
+        seq_w, seq_h = 1080, 1080
+    elif aspect_ratio == "16:9":
+        seq_w, seq_h = 1920, 1080
+
+    multi_track_config = {
+        "videoPath": str(final_video_path),
+        "overlayPath": clean_overlay_path,
+        "srtPath": str(srt_path) if srt_path and srt_path.exists() else None,
+        "sfxStemPath": clean_sfx_path,
+        "dialoguePath": None,
+        "musicPath": None,
+        "seqName": f"OpenCut Reel - {base_name} ({aspect_ratio})",
+        "createNewSequence": True,
+        "placeIndividualSfx": False,
+        "isVertical": (aspect_ratio == "9:16"),
+        "width": seq_w,
+        "height": seq_h,
+        "zoomEvents": [{"time": seg["start"] - best_start, "scale": seg["zoom"]} for seg in processed_segments if seg.get("zoom", 1.0) > 1.02],
+        "mediaEvents": media_events if (ai_allow_videos or ai_allow_gifs) else []
+    }
+
     return {
         "status": "success",
         "video_path": str(final_video_path),
-        "sfx_stem_path": str(sfx_stem_path) if sfx_stem_path and sfx_stem_path.exists() else None,
+        "sfx_stem_path": clean_sfx_path,
         "srt_path": str(srt_path) if srt_path and srt_path.exists() else None,
         "ass_path": str(ass_path) if ass_path and ass_path.exists() else None,
+        "overlay_path": clean_overlay_path,
         "duration": round(actual_dur, 2),
         "best_start": round(best_start, 2),
         "best_end": round(best_end, 2),
@@ -824,5 +979,6 @@ def create_auto_reel(
         "caption_style": caption_style,
         "sfx_count": len(sfx_events),
         "genre": sound_genre,
-        "events": sfx_events
+        "events": sfx_events,
+        "multi_track_config": multi_track_config
     }

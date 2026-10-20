@@ -330,6 +330,10 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
             api_key = data.get("api_key")
             ai_model = data.get("ai_model")
             custom_endpoint = data.get("custom_endpoint")
+            ai_allow_videos = bool(data.get("ai_allow_videos", True))
+            ai_allow_sfx = bool(data.get("ai_allow_sfx", True))
+            ai_allow_gifs = bool(data.get("ai_allow_gifs", True))
+            ai_allow_motion = bool(data.get("ai_allow_motion", True))
 
             try:
                 from auto_reels_engine import analyze_viral_candidates
@@ -342,7 +346,11 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
                     ai_provider=ai_provider,
                     api_key=api_key,
                     ai_model=ai_model,
-                    custom_endpoint=custom_endpoint
+                    custom_endpoint=custom_endpoint,
+                    ai_allow_videos=ai_allow_videos,
+                    ai_allow_sfx=ai_allow_sfx,
+                    ai_allow_gifs=ai_allow_gifs,
+                    ai_allow_motion=ai_allow_motion
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -382,6 +390,7 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
             raw_duration = data.get("target_duration") if data.get("target_duration") is not None else data.get("duration")
             target_duration = float(raw_duration) if raw_duration not in ("full", 0, "0", None) else 0.0
             aspect_ratio = data.get("aspect_ratio", "9:16")
+            layout_mode = data.get("layout_mode", "crop_center")
             remove_silence = bool(data.get("remove_silence", True))
             auto_zoom = bool(data.get("auto_zoom", True))
             zoom_style = str(data.get("zoom_style", "jump"))
@@ -409,6 +418,7 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
                     filepath=video_path,
                     target_duration=target_duration,
                     aspect_ratio=aspect_ratio,
+                    layout_mode=layout_mode,
                     remove_silence=remove_silence,
                     auto_zoom=auto_zoom,
                     zoom_style=zoom_style,

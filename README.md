@@ -132,10 +132,25 @@ OpenCut Enhanced is organized into 6 powerful dedicated suites:
 * **Smart AutoZoom:**
   * Adds dynamic camera zoom cuts (1.1x–1.3x) based on natural conversational cadence and vocal emphasis.
   * Supports *Smooth Ease* or *Instant Punch-in* styles with automatic track targeting.
-* **Auto-Reels & Viral Shorts Generator:**
-  * Autonomous conversion of horizontal footage into vertical 9:16 viral candidates.
-  * Evaluates candidates with **Viral Scoring (65+)** using transcript hooks or visual facial expressions.
-  * One-click `Add to Timeline` inserts the finished vertical captioned reel onto your active sequence.
+* **Auto-Reels & Viral Shorts Agent (Multi-Track & Layout Modes):**
+  * Autonomous conversion of long-form or horizontal footage into high-retention 9:16 vertical Reels and Shorts.
+  * **Advanced Framing Layouts:**
+    * *9:16 Center Face Crop* — Dynamic camera framing with punch-in zooms.
+    * *9:16 Blurred Background* — No cropping; centers full wide footage over an animated Gaussian-blurred backdrop.
+    * *9:16 Split Screen* — Stacked dual-frame layout (Top face / Bottom action or B-roll).
+    * *1:1 Square & Original Ratio* — Perfect for Instagram feeds, LinkedIn, and multi-platform distribution.
+  * **Remotion & HyperFrames Motion Overlays (Track V2):**
+    * Generates a transparent RGBA `.mov` overlay featuring a dynamic bottom progress bar (`1080*t/duration`) and a glassmorphic intro hook card (`"WATCH UNTIL THE END"`).
+  * **Full Multi-Track Premiere Pro Timeline Assembly:**
+    * Automatically configures 9:16 vertical sequences in Premiere Pro with separated tracks:
+      * **V1:** Master cuts with camera punch-in zooms.
+      * **V2:** Motion graphic progress bar, hook cards, and AI contextual B-Roll / Reaction GIFs.
+      * **V3:** Kinetic karaoke subtitles (.srt / .ass).
+      * **A1:** Master dialogue leveled to EBU R128 (-16 LUFS).
+      * **A2:** Synchronized SFX stem (whooshes, impacts, pops).
+  * **Granular AI Media Permissions:** Full user toggles for Auto B-Roll, Auto SFX, Reaction GIFs, and Motion Overlays.
+  * Evaluates moments with **Viral Scoring (65–95+)** using transcript hooks and vocal energy peaks.
+  * One-click `Add to Timeline` instantly builds the multi-track sequence in Premiere Pro.
 * **Auto-Hook Intro Generator:**
   * Assembles an electrifying 3–8 second high-retention preview hook at the start of your video with kinetic overlays and transition whooshes.
 * **Full AutoCut & Cleanup Chain:**
