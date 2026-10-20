@@ -300,11 +300,10 @@ cd OpenCut-Enhanced
 ```
 
 ### 2. ⚡ 1-Click Fast Setup
-Run the short setup command (or simply double-click `setup.bat`):
-```bash
-setup
-```
-*(Or `python setup.py`)*
+You have three ultra-convenient ways to install:
+* **GUI Installer:** Double-click **`OpenCut-Setup.exe`** and click **Install & Setup Now**.
+* **1-Click Batch:** Double-click **`setup.bat`** (or type `setup` in terminal).
+* **Python CLI:** Run `python setup.py`.
 
 This automatically:
 1. Enables **PlayerDebugMode** in Windows Registry across all Premiere Pro versions (CSXS.9–CSXS.18).
