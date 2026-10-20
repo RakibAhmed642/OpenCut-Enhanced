@@ -1,1 +1,0 @@
-[1:a]adelay=500|500[a1]; [2:a]adelay=4500|4500[a2]; [3:a]adelay=9500|9500[a3]; [4:a]adelay=15500|15500[a4]; [a1][a2][a3][a4]amix=inputs=4:duration=longest[aout]

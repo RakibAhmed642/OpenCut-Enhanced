@@ -1,7 +1,0 @@
-1
-00:00:00,000 --> 00:00:04,060
-Welcome to OpenCut Pro Editor. This is the first take of the awesome editing system.
-
-2
-00:00:04,220 --> 00:00:06,400
-This is the first take of the awesome editing system.
