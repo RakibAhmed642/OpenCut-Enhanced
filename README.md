@@ -297,11 +297,13 @@ git clone https://github.com/RakibAhmed642/OpenCut-Enhanced.git
 cd OpenCut-Enhanced
 ```
 
-### 2. ⚡ One-Click Automatic Setup & Desktop Icon
-Run the universal auto-setup script once after cloning:
+### 2. ⚡ 1-Click Fast Setup
+Run the short setup command (or simply double-click `setup.bat`):
 ```bash
-python setup_environment.py
+setup
 ```
+*(Or `python setup.py`)*
+
 This automatically:
 1. Enables **PlayerDebugMode** in Windows Registry across all Premiere Pro versions (CSXS.9–CSXS.18).
 2. Installs and links the **OpenCut CEP panel** directly into `%APPDATA%\Adobe\CEP\extensions`.
