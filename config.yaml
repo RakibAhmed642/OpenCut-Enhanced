@@ -1,0 +1,75 @@
+# OpenCut Autonomous Video Editing Pipeline Configuration
+# All parameters are configurable without hardcoded magic numbers.
+
+silence:
+  noise_threshold_db: -30.0   # Default noise threshold for silencedetect in dB
+  min_duration: 0.5          # Minimum duration of silence to remove in seconds
+
+padding:
+  word_padding: 0.08         # Safety padding added before and after kept segments (seconds)
+  merge_threshold: 0.15      # Segments closer than this distance are merged to prevent micro-cuts
+
+fillers:
+  enabled: true
+  words:
+    - "um"
+    - "uh"
+    - "ah"
+    - "er"
+    - "like"
+    - "you know"
+    - "hmm"
+    - "mane"
+    - "ar"
+    - "ki jani"
+    - "tai"
+    - "eita"
+    - "sheita"
+    - "actually"
+    - "basically"
+
+repeated_takes:
+  enabled: true
+  similarity_threshold: 0.75 # Sentence similarity ratio (0.0 to 1.0) to identify duplicate takes
+  keep: "last"               # Keep the last (best) take
+
+whisper:
+  model_size: "base"         # "tiny", "base", "small", "medium"
+  compute_type: "int8"       # "int8", "float16", "float32" for fast CPU/GPU inference
+  language: null             # null for auto-detect (supports Bangla, English, Banglish)
+  beam_size: 5
+
+rendering:
+  video_codec: "libx264"
+  crf: 18
+  preset: "medium"
+  audio_codec: "aac"
+  audio_bitrate: "192k"
+  target_lufs: -16.0         # Standard EBU R128 / YouTube loudness target
+  loudnorm_lra: 11.0
+  loudnorm_tp: -1.5
+
+vertical:
+  width: 1080
+  height: 1920
+  crop_mode: "center"        # "center" or "face_track"
+
+captions:
+  enabled: true
+  words_per_line_min: 2
+  words_per_line_max: 4
+  font_name: "Arial"
+  font_size: 26
+  primary_color: "&H00FFFFFF"    # White (&HAABBGGRR)
+  highlight_color: "&H0022D3EE"  # Cyan/Gold active word highlight
+  outline_color: "&H000B0D14"    # Deep dark outline
+  outline_width: 3.5
+  shadow_depth: 1.5
+  alignment: 2                   # Numpad 2: Bottom-center
+  margin_v: 180                  # Safe bottom margin for 9:16 vertical reels
+  margin_l: 70
+  margin_r: 70
+
+qa:
+  frame_count: 5
+  duration_tolerance: 0.3        # Max allowed difference between expected duration and output in seconds

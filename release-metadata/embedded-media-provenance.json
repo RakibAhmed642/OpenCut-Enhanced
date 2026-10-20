@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "lane": "windows",
+  "security": {
+    "cve": "CVE-2026-8461",
+    "fixed_ffmpeg": "8.1.2",
+    "library_floors": {
+      "avcodec": [
+        62,
+        28,
+        102
+      ],
+      "avformat": [
+        62,
+        12,
+        102
+      ],
+      "avutil": [
+        60,
+        26,
+        102
+      ]
+    },
+    "evidence": {
+      "advisory": "https://nvd.nist.gov/vuln/detail/CVE-2026-8461",
+      "ffmpeg_tag": "https://github.com/FFmpeg/FFmpeg/releases/tag/n8.1.2",
+      "opencv_release": "https://github.com/opencv/opencv-python/releases/tag/94",
+      "pyav_18_0": "https://github.com/PyAV-Org/PyAV/releases/tag/v18.0.0",
+      "pyav_18_1": "https://github.com/PyAV-Org/PyAV/releases/tag/v18.1.0"
+    }
+  },
+  "runtime_policy": {
+    "opencv_ffmpeg_priority": "0"
+  },
+  "providers": {
+    "opencv": {
+      "installed": true,
+      "distribution": "opencv-python",
+      "version": "4.14.0.94",
+      "module_version": "4.14.0",
+      "reviewed_distribution": true,
+      "ffmpeg_enabled_at_build": true,
+      "ffmpeg_backend_enabled": false,
+      "ffmpeg_build": "prebuilt binaries",
+      "libraries": {
+        "avcodec": [
+          61,
+          19,
+          100
+        ],
+        "avformat": [
+          61,
+          7,
+          100
+        ],
+        "avutil": [
+          59,
+          39,
+          100
+        ]
+      },
+      "security": {
+        "ok": false,
+        "fixed_ffmpeg": "8.1.2",
+        "versions": {
+          "avcodec": [
+            61,
+            19,
+            100
+          ],
+          "avformat": [
+            61,
+            7,
+            100
+          ],
+          "avutil": [
+            59,
+            39,
+            100
+          ]
+        },
+        "missing": [],
+        "below_floor": {
+          "avcodec": {
+            "detected": [
+              61,
+              19,
+              100
+            ],
+            "required": [
+              62,
+              28,
+              102
+            ]
+          },
+          "avformat": {
+            "detected": [
+              61,
+              7,
+              100
+            ],
+            "required": [
+              62,
+              12,
+              102
+            ]
+          },
+          "avutil": {
+            "detected": [
+              59,
+              39,
+              100
+            ],
+            "required": [
+              60,
+              26,
+              102
+            ]
+          }
+        }
+      },
+      "status": "disabled",
+      "ok": true,
+      "error": "",
+      "native_files": [
+        {
+          "path": "cv2/cv2.pyd",
+          "size": 75069952,
+          "sha256": "8a0cade25da0aa443139dd28acdddefe5480fa2592897ba7a76d292a37a50437"
+        },
+        {
+          "path": "cv2/opencv_videoio_ffmpeg4140_64.dll",
+          "size": 30518784,
+          "sha256": "131d7657a173f659de69e1e331916e4a9c0d8cf7bde7201a6988af6056b94853"
+        }
+      ]
+    },
+    "pyav": {
+      "installed": true,
+      "distribution": "av",
+      "version": "18.0.0",
+      "module_version": "18.0.0",
+      "reviewed_distribution": true,
+      "libraries": {
+        "avutil": [
+          60,
+          26,
+          102
+        ],
+        "avcodec": [
+          62,
+          28,
+          102
+        ],
+        "avformat": [
+          62,
+          12,
+          102
+        ]
+      },
+      "security": {
+        "ok": true,
+        "fixed_ffmpeg": "8.1.2",
+        "versions": {
+          "avutil": [
+            60,
+            26,
+            102
+          ],
+          "avcodec": [
+            62,
+            28,
+            102
+          ],
+          "avformat": [
+            62,
+            12,
+            102
+          ]
+        },
+        "missing": [],
+        "below_floor": {}
+      },
+      "status": "verified",
+      "ok": true,
+      "error": "",
+      "native_files": [
+        {
+          "path": "av.libs/avcodec-62-984de33114b7fa384296817dec999c9d.dll",
+          "size": 19266048,
+          "sha256": "777704d8914bb99e5d78f3a0e7424031b5376621f2e7c60e83b84e77fcc7e2d7"
+        },
+        {
+          "path": "av.libs/avformat-62-b6d6bb16ff0b7753371e2d0b285c9dc0.dll",
+          "size": 2845184,
+          "sha256": "a3494c5304c387518e0d5136ed9bf5e5fc1a3b227ce3f380357149ee09717ff2"
+        },
+        {
+          "path": "av.libs/avutil-60-cc1777f859dcfd98b8019bdf459e774e.dll",
+          "size": 1145856,
+          "sha256": "ff4aae43357698825fa5392764d3b680e36c1846b75677bdbf313d8c141ece6d"
+        },
+        {
+          "path": "av/_core.pyd",
+          "size": 29184,
+          "sha256": "fddabbe4bd31288baa6cd90dcddf69dd13bd14fdeee95cb0f7b2aedf97b82ce5"
+        }
+      ]
+    }
+  },
+  "artifact_files": [
+    {
+      "provider": "pyav",
+      "path": "server/_internal/av.libs/avcodec-62-984de33114b7fa384296817dec999c9d.dll",
+      "size": 19266048,
+      "sha256": "777704d8914bb99e5d78f3a0e7424031b5376621f2e7c60e83b84e77fcc7e2d7"
+    },
+    {
+      "provider": "pyav",
+      "path": "server/_internal/av.libs/avformat-62-b6d6bb16ff0b7753371e2d0b285c9dc0.dll",
+      "size": 2845184,
+      "sha256": "a3494c5304c387518e0d5136ed9bf5e5fc1a3b227ce3f380357149ee09717ff2"
+    },
+    {
+      "provider": "pyav",
+      "path": "server/_internal/av.libs/avutil-60-cc1777f859dcfd98b8019bdf459e774e.dll",
+      "size": 1145856,
+      "sha256": "ff4aae43357698825fa5392764d3b680e36c1846b75677bdbf313d8c141ece6d"
+    }
+  ],
+  "errors": [],
+  "ok": true
+}

@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.bak
+*.dll
+*.pyd
+
+# Compiled Binaries & Executables (Host on GitHub Releases)
+*.exe
+server/_internal/
+OpenCut-Server.exe_extracted/
+temp_reverse_eng/
+extracted_autocut/
+
+# Node & Package Managers
+node_modules/
+dist/
+.npm/
+
+# Local media, cuts, and user test projects
+source/
+projects/
+work/*
+!work/.gitkeep
+logs/*.log
+*.log
+
+# Heavy Media Files & Render Outputs
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.wmv
+*.wav
+*.mp3
+*.flac
+*.aac
+
+# User Credentials & Secrets
+.env
+*.token
+*.pem
+*.key
+
+# OS Artifacts
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,41 @@
+{
+  "name": "opencut-panel",
+  "version": "1.55.1",
+  "private": true,
+  "description": "OpenCut CEP Panel for Adobe Premiere Pro",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint --max-warnings 0 client/main.js client/transcript-correction-controller.js client/gpu-selection-controller.js client/panel-state.js client/backend-client.js client/panel-bootstrap-token.js client/job-runtime.js client/job-lifecycle.js client/host-write-verification.js client/component-utils.js client/announce-utils.js client/cep-theme.js client/timeline-utils.js client/onboarding-state.js client/update-controller.js client/results-controller.js client/settings-diagnostics-controller.js client/navigation-controller.js client/collapsible-cards.js client/disabled-reasons.js client/bootstrap.js && npm run lint:premiere",
+    "lint:premiere": "cd ../com.opencut.uxp && eslint --max-warnings 0 \"*.js\"",
+    "pretest": "npm run build && npm run build:verify",
+    "test": "vitest run --config vitest.config.mjs",
+    "test:rendered": "playwright test --config playwright.config.mjs",
+    "test:rendered:update": "playwright test --config playwright.config.mjs --update-snapshots",
+    "audit:check": "node scripts/check-advisories.mjs",
+    "audit:check:win": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%INIT_CWD%\\scripts\\panel-node-gate.ps1\" audit:check",
+    "audit:esbuild": "node scripts/check-esbuild-pin.mjs",
+    "audit:esbuild:win": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%INIT_CWD%\\scripts\\panel-node-gate.ps1\" audit:esbuild",
+    "build:verify": "node scripts/verify-build.mjs --require-build",
+    "build:verify:win": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%INIT_CWD%\\scripts\\panel-node-gate.ps1\" build:verify"
+  },
+  "devDependencies": {
+    "@adobe/eslint-plugin-premierepro": "26.3.0",
+    "@adobe/premierepro": "26.3.0",
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.61.1",
+    "eslint": "^9.39.5",
+    "globals": "^17.7.0",
+    "terser": "^5.47.1",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.6"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.9",
+    "esbuild": "^0.25.0",
+    "js-yaml": "^4.3.1",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23"
+  }
+}

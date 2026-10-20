@@ -1,0 +1,52 @@
+/* OpenCut CEP command-center color and elevation tokens. */
+
+html.theme-light {
+    --cc-bg: #edf1f6;
+    --cc-header: rgba(247, 249, 252, 0.96);
+    --cc-sidebar: #f7f9fc;
+    --cc-surface: #ffffff;
+    --cc-surface-raised: #f6f8fb;
+    --cc-control: #edf1f6;
+    --cc-border: rgba(34, 48, 69, 0.14);
+    --cc-border-strong: rgba(34, 48, 69, 0.24);
+    --cc-text: #182132;
+    --cc-muted: #5e697a;
+    --cc-accent: #466fd3;
+    --cc-accent-soft: rgba(70, 111, 211, 0.12);
+    --cc-success: #287f64;
+    --cc-warning: #72510f;
+    --cc-danger: #ad4845;
+    --cc-hover: rgba(24, 33, 50, 0.055);
+    --cc-selected: rgba(70, 111, 211, 0.13);
+    --cc-overlay: rgba(15, 20, 29, 0.54);
+    --cc-focus-ring: rgba(70, 111, 211, 0.30);
+    --cc-disabled: #778294;
+    --cc-shadow: 0 14px 32px rgba(38, 52, 73, 0.10);
+    --cc-shadow-float: 0 18px 48px rgba(38, 52, 73, 0.18);
+}
+
+:root {
+    --cc-bg: #050608;
+    --cc-header: rgba(5, 6, 8, 0.98);
+    --cc-sidebar: #090a0f;
+    --cc-surface: #0e1017;
+    --cc-surface-raised: #141720;
+    --cc-control: #1a1d26;
+    --cc-border: rgba(255, 255, 255, 0.08);
+    --cc-border-strong: rgba(255, 255, 255, 0.16);
+    --cc-text: #f4f6f8;
+    --cc-muted: #9aa1ad;
+    --cc-accent: #facc15;
+    --cc-accent-soft: rgba(250, 204, 21, 0.14);
+    --cc-success: #34d399;
+    --cc-warning: #fbbf24;
+    --cc-danger: #f87171;
+    --cc-hover: rgba(255, 255, 255, 0.05);
+    --cc-selected: rgba(250, 204, 21, 0.16);
+    --cc-overlay: rgba(0, 0, 0, 0.85);
+    --cc-focus-ring: rgba(250, 204, 21, 0.40);
+    --cc-disabled: #646b77;
+    --cc-radius: 6px;
+    --cc-shadow: none;
+    --cc-shadow-float: 0 18px 48px rgba(0, 0, 0, 0.65);
+}

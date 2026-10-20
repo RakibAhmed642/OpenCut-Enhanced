@@ -1,0 +1,37 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H0000FFFF,&H000B0D14,&H80000000,1,0,0,0,100,100,0,0,1,3.8,1.5,2,40,40,200,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:00.34,Default,,0,0,0,,{\c&H0000FFFF\b1}WELCOME{\c&H00FFFFFF\b0} TO OPENCUT PRO
+Dialogue: 0,0:00:00.34,0:00:00.56,Default,,0,0,0,,WELCOME {\c&H0000FFFF\b1}TO{\c&H00FFFFFF\b0} OPENCUT PRO
+Dialogue: 0,0:00:00.56,0:00:01.10,Default,,0,0,0,,WELCOME TO {\c&H0000FFFF\b1}OPENCUT{\c&H00FFFFFF\b0} PRO
+Dialogue: 0,0:00:01.10,0:00:01.32,Default,,0,0,0,,WELCOME TO OPENCUT {\c&H0000FFFF\b1}PRO{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:01.32,0:00:01.60,Default,,0,0,0,,{\c&H0000FFFF\b1}EDITOR.{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:01.76,0:00:01.90,Default,,0,0,0,,{\c&H0000FFFF\b1}THIS{\c&H00FFFFFF\b0} IS THE FIRST
+Dialogue: 0,0:00:01.90,0:00:02.04,Default,,0,0,0,,THIS {\c&H0000FFFF\b1}IS{\c&H00FFFFFF\b0} THE FIRST
+Dialogue: 0,0:00:02.04,0:00:02.20,Default,,0,0,0,,THIS IS {\c&H0000FFFF\b1}THE{\c&H00FFFFFF\b0} FIRST
+Dialogue: 0,0:00:02.20,0:00:02.42,Default,,0,0,0,,THIS IS THE {\c&H0000FFFF\b1}FIRST{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:02.42,0:00:02.68,Default,,0,0,0,,{\c&H0000FFFF\b1}TAKE{\c&H00FFFFFF\b0} OF THE AWESOME
+Dialogue: 0,0:00:02.68,0:00:02.88,Default,,0,0,0,,TAKE {\c&H0000FFFF\b1}OF{\c&H00FFFFFF\b0} THE AWESOME
+Dialogue: 0,0:00:02.88,0:00:03.00,Default,,0,0,0,,TAKE OF {\c&H0000FFFF\b1}THE{\c&H00FFFFFF\b0} AWESOME
+Dialogue: 0,0:00:03.00,0:00:03.26,Default,,0,0,0,,TAKE OF THE {\c&H0000FFFF\b1}AWESOME{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:03.26,0:00:03.56,Default,,0,0,0,,{\c&H0000FFFF\b1}EDITING{\c&H00FFFFFF\b0} SYSTEM.
+Dialogue: 0,0:00:03.56,0:00:04.06,Default,,0,0,0,,EDITING {\c&H0000FFFF\b1}SYSTEM.{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:04.22,0:00:04.42,Default,,0,0,0,,{\c&H0000FFFF\b1}THIS{\c&H00FFFFFF\b0} IS THE FIRST
+Dialogue: 0,0:00:04.42,0:00:04.54,Default,,0,0,0,,THIS {\c&H0000FFFF\b1}IS{\c&H00FFFFFF\b0} THE FIRST
+Dialogue: 0,0:00:04.54,0:00:04.70,Default,,0,0,0,,THIS IS {\c&H0000FFFF\b1}THE{\c&H00FFFFFF\b0} FIRST
+Dialogue: 0,0:00:04.70,0:00:04.92,Default,,0,0,0,,THIS IS THE {\c&H0000FFFF\b1}FIRST{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:04.92,0:00:05.20,Default,,0,0,0,,{\c&H0000FFFF\b1}TAKE{\c&H00FFFFFF\b0} OF THE AWESOME
+Dialogue: 0,0:00:05.20,0:00:05.40,Default,,0,0,0,,TAKE {\c&H0000FFFF\b1}OF{\c&H00FFFFFF\b0} THE AWESOME
+Dialogue: 0,0:00:05.40,0:00:05.48,Default,,0,0,0,,TAKE OF {\c&H0000FFFF\b1}THE{\c&H00FFFFFF\b0} AWESOME
+Dialogue: 0,0:00:05.48,0:00:05.78,Default,,0,0,0,,TAKE OF THE {\c&H0000FFFF\b1}AWESOME{\c&H00FFFFFF\b0}
+Dialogue: 0,0:00:05.78,0:00:06.10,Default,,0,0,0,,{\c&H0000FFFF\b1}EDITING{\c&H00FFFFFF\b0} SYSTEM.
+Dialogue: 0,0:00:06.10,0:00:06.40,Default,,0,0,0,,EDITING {\c&H0000FFFF\b1}SYSTEM.{\c&H00FFFFFF\b0}

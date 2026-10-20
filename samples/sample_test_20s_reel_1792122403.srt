@@ -1,0 +1,11 @@
+1
+00:00:00,000 --> 00:00:02,640
+This is the first take of the awesome editing system.
+
+2
+00:00:04,880 --> 00:00:08,700
+This is the first take of the awesome editing system and it works perfectly.
+
+3
+00:00:10,760 --> 00:00:13,880
+Start editing now, Ida Shadyo sat around.

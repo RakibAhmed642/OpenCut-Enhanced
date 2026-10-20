@@ -1,0 +1,5976 @@
+/*
+ * OpenCut ExtendScript Host
+ * Runs inside Premiere Pro's ExtendScript engine.
+ *
+ * IMPORTANT: ExtendScript is ES3 -- no let/const, no arrow functions,
+ * no template literals, no default params. Use var everywhere.
+ */
+
+// ============================================================================
+// ES3 JSON Polyfill for ExtendScript
+// ============================================================================
+if (typeof JSON !== "object" || !JSON) {
+    JSON = {};
+}
+(function () {
+    "use strict";
+    var rx_escapable = /[\\\"\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+    var meta = {
+        "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r",
+        "\"": "\\\"", "\\": "\\\\"
+    };
+    function quote(string) {
+        rx_escapable.lastIndex = 0;
+        return rx_escapable.test(string) ? "\"" + string.replace(rx_escapable, function (a) {
+            var c = meta[a];
+            return typeof c === "string" ? c : "\\u" + ("0000" + a.charCodeAt(0).toString(16)).slice(-4);
+        }) + "\"" : "\"" + string + "\"";
+    }
+    function str(key, holder) {
+        var value = holder[key];
+        if (value && typeof value === "object" && typeof value.toJSON === "function") {
+            value = value.toJSON(key);
+        }
+        switch (typeof value) {
+            case "string": return quote(value);
+            case "number": return isFinite(value) ? String(value) : "null";
+            case "boolean":
+            case "null": return String(value);
+            case "object":
+                if (!value) return "null";
+                var partial = [];
+                if (Object.prototype.toString.apply(value) === "[object Array]") {
+                    var length = value.length;
+                    for (var i = 0; i < length; i += 1) {
+                        partial[i] = str(i, value) || "null";
+                    }
+                    return "[" + partial.join(",") + "]";
+                }
+                for (var k in value) {
+                    if (Object.prototype.hasOwnProperty.call(value, k)) {
+                        var v = str(k, value);
+                        if (v !== undefined) partial.push(quote(k) + ":" + v);
+                    }
+                }
+                return "{" + partial.join(",") + "}";
+        }
+    }
+    if (typeof JSON.stringify !== "function") {
+        JSON.stringify = function (value) {
+            return str("", {"": value});
+        };
+    }
+    if (typeof JSON.parse !== "function") {
+        JSON.parse = function (text) {
+            var sanitized = String(text || "")
+                .replace(/\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4})/g, "@")
+                .replace(/"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g, "]")
+                .replace(/(?:^|:|,)(?:\s*\[)+/g, "");
+            if (!/^[\],:{}\s]*$/.test(sanitized)) {
+                throw new Error("Unsafe JSON payload");
+            }
+            return eval("(" + text + ")");
+        };
+    }
+}());
+
+/**
+ * Log errors to the ExtendScript console for debugging.
+ */
+function _ocLog(msg) {
+    try { $.writeln("[OpenCut] " + msg); } catch (e) {}
+}
+
+
+/**
+ * Simple ping to verify ExtendScript host is loaded and running.
+ * Returns "pong" if everything is OK.
+ */
+function ocPing() {
+    return "pong";
+}
+
+
+/**
+ * Get all media items in the project as a JSON array.
+ * This is the primary way the panel discovers available clips.
+ * Returns JSON string: [{name, path, duration, type, nodeId}, ...]
+ */
+function getAllProjectMedia() {
+    var scan = null;
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var root = app.project.rootItem;
+        if (!root) {
+            return JSON.stringify({ error: "Cannot access project root" });
+        }
+        scan = _collectProjectMedia(root, 5, 80);
+    } catch (e) {
+        _ocLog("getAllProjectMedia error: " + e.toString());
+        return JSON.stringify({ error: "ExtendScript: " + e.toString() });
+    }
+    return JSON.stringify(scan ? scan.items : []);
+}
+
+
+/**
+ * Get project media with folder path - wrapper for panel use.
+ * Returns JSON string: {media: [...], projectFolder: "..."}
+ */
+function getProjectMedia() {
+    var scan = null;
+    var projectFolder = "";
+    var projectFolderSource = "";
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open", media: [], projectFolder: "", rootChildren: 0, scanAttempts: 0 });
+        }
+        var root = app.project.rootItem;
+        if (!root) {
+            return JSON.stringify({ error: "Cannot access project root", media: [], projectFolder: "", rootChildren: 0, scanAttempts: 0 });
+        }
+
+        // Priority 1: derive project folder from the saved .prproj path.
+        try {
+            var projPath = app.project.path;
+            if (projPath) {
+                var projFile = new File(projPath);
+                if (projFile.parent) {
+                    projectFolder = projFile.parent.fsName;
+                    projectFolderSource = "project_path";
+                }
+            }
+        } catch (e2) {
+            _ocLog("getProjectMedia projectFolder error: " + e2.toString());
+        }
+
+        scan = _collectProjectMedia(root, 6, 100);
+
+        // Priority 2: if the project hasn't been saved, fall back to
+        // the directory of the first imported media. Keeps outputs
+        // near the user's content instead of at the source clip's
+        // arbitrary origin folder (Downloads, network share, etc).
+        if (!projectFolder && scan && scan.items && scan.items.length > 0) {
+            var i;
+            for (i = 0; i < scan.items.length; i++) {
+                try {
+                    var firstPath = scan.items[i].path || "";
+                    if (firstPath) {
+                        var f = new File(firstPath);
+                        if (f.parent) {
+                            projectFolder = f.parent.fsName;
+                            projectFolderSource = "first_media";
+                            break;
+                        }
+                    }
+                } catch (eF) {}
+            }
+        }
+
+        // Priority 3: scratch disk. Some projects have a configured
+        // scratch / captures path even when .prproj hasn't been saved.
+        if (!projectFolder) {
+            try {
+                var scratch = app.project.scratchDiskPath;
+                if (scratch) {
+                    projectFolder = String(scratch);
+                    projectFolderSource = "scratch_disk";
+                }
+            } catch (eS) {}
+        }
+    } catch (e) {
+        _ocLog("getProjectMedia error: " + e.toString());
+        return JSON.stringify({ error: "ExtendScript: " + e.toString(), media: [], projectFolder: "", rootChildren: 0, scanAttempts: 0 });
+    }
+    return JSON.stringify({
+        media: scan ? scan.items : [],
+        projectFolder: projectFolder,
+        projectFolderSource: projectFolderSource,
+        rootChildren: scan ? scan.rootChildren : 0,
+        scanAttempts: scan ? scan.attempts : 0
+    });
+}
+
+function _getProjectChildCount(parent) {
+    try {
+        if (parent && parent.children) return parent.children.numItems || 0;
+    } catch (e) {}
+    return 0;
+}
+
+function _normalizeMediaPath(path) {
+    if (!path || typeof path !== "string") return "";
+    var normalized = path;
+    try { normalized = decodeURI(normalized); } catch (e) {}
+    normalized = normalized.replace(/^file:\/*/i, "");
+    normalized = normalized.replace(/^([A-Za-z])\|/, "$1:");
+    try {
+        if (Folder && Folder.fs === "Windows") {
+            if (/^\/[A-Za-z]:/.test(normalized)) normalized = normalized.substring(1);
+            normalized = normalized.replace(/\//g, "\\");
+        }
+    } catch (e2) {}
+    return normalized;
+}
+
+function _collectProjectMedia(root, maxAttempts, delayMs) {
+    var attempts = 0;
+    var rootChildren = 0;
+    var items = [];
+    if (!maxAttempts || maxAttempts < 1) maxAttempts = 1;
+    if (!delayMs || delayMs < 0) delayMs = 0;
+
+    while (attempts < maxAttempts) {
+        attempts++;
+        rootChildren = _getProjectChildCount(root);
+        items = [];
+        _walkProjectItems(root, items, {}, 0);
+        if (items.length > 0) break;
+        if (rootChildren === 0 || attempts >= maxAttempts) break;
+        if (delayMs > 0) $.sleep(delayMs);
+    }
+
+    return {
+        items: items,
+        rootChildren: rootChildren,
+        attempts: attempts
+    };
+}
+
+function _walkProjectItems(parent, items, seenPaths, depth) {
+    if (depth > 20) return;
+    var numChildren = _getProjectChildCount(parent);
+    if (!numChildren) return;
+
+    for (var i = 0; i < numChildren; i++) {
+        var item = null;
+        try { item = parent.children[i]; } catch (e) { continue; }
+        if (!item) continue;
+
+        try {
+            // Discriminate on getMediaPath() FIRST — it's the only
+            // reliable check across Premiere 14-25+. The old `item.type`
+            // heuristic breaks on 2025+ where the enum values shifted,
+            // and the `!item.getMediaPath` fallback always failed for
+            // bins that expose the method (which most versions do).
+            var mediaPath = "";
+            try { mediaPath = _normalizeMediaPath(item.getMediaPath()); } catch (e4) { mediaPath = ""; }
+
+            var childCount = 0;
+            try { childCount = (item.children && item.children.numItems) || 0; } catch (eC) { childCount = 0; }
+
+            if (mediaPath && mediaPath.length > 0) {
+                // Real on-disk media — record it.
+                var dedupeKey = mediaPath.toLowerCase();
+                if (seenPaths && seenPaths[dedupeKey]) continue;
+                if (seenPaths) seenPaths[dedupeKey] = true;
+
+                var dur = 0;
+                try {
+                    var outPt = item.getOutPoint();
+                    dur = outPt ? outPt.seconds : 0;
+                } catch (e5) { dur = 0; }
+
+                var hasVideo = false;
+                var hasAudio = false;
+                try { hasVideo = item.hasVideo(); } catch (e6) {}
+                try { hasAudio = item.hasAudio(); } catch (e7) {}
+
+                var mediaType = "unknown";
+                if (hasVideo && hasAudio) mediaType = "av";
+                else if (hasVideo) mediaType = "video";
+                else if (hasAudio) mediaType = "audio";
+
+                items.push({
+                    name: item.name || "",
+                    path: mediaPath,
+                    duration: dur,
+                    type: mediaType,
+                    nodeId: item.nodeId || ""
+                });
+            } else if (childCount > 0) {
+                // No media path but has children → treat as bin / folder
+                // / sub-project. Walk regardless of reported type — this
+                // reaches media nested inside bins on every Premiere
+                // version, including unsaved Premiere 2025 projects.
+                _walkProjectItems(item, items, seenPaths, depth + 1);
+            }
+            // else: sequence / offline media / exotic placeholder — skip
+        } catch (e) { _ocLog("walkItem[" + i + "] error: " + e.toString()); }
+    }
+}
+
+
+/**
+ * Extract media file path from a track item or project item.
+ */
+function _extractItemMediaPath(item) {
+    if (!item) return "";
+    var p = "";
+    try {
+        if (item.projectItem) {
+            try {
+                if (typeof item.projectItem.getMediaPath === "function") {
+                    p = item.projectItem.getMediaPath();
+                }
+            } catch (e1) {}
+            if (!p && item.projectItem.mediaPath) p = item.projectItem.mediaPath;
+            if (!p && item.projectItem.treePath) p = item.projectItem.treePath;
+        }
+    } catch (e2) {}
+    if (!p) {
+        try {
+            if (typeof item.getMediaPath === "function") {
+                p = item.getMediaPath();
+            }
+        } catch (e3) {}
+        if (!p && item.mediaPath) p = item.mediaPath;
+    }
+    return _normalizeMediaPath(p);
+}
+
+function _addUniqueClipItem(results, name, path) {
+    if (!path) return;
+    for (var i = 0; i < results.length; i++) {
+        if (results[i].path.toLowerCase() === path.toLowerCase()) return;
+    }
+    var cleanName = name || path.replace(/^.*[\\\/]/, "");
+    results.push({ name: cleanName, path: path });
+}
+
+/**
+ * Get selected clips from timeline or project panel.
+ * Tries multiple methods for maximum compatibility.
+ * Returns JSON string: [{name, path}] or {error: "..."}
+ */
+function getSelectedClips() {
+    var results = [];
+
+    // Method 1: Timeline selection via active sequence
+    try {
+        var seq = app.project ? app.project.activeSequence : null;
+        if (seq) {
+            // Priority 1A: seq.getSelection() (Official Premiere Pro Sequence Selection API)
+            try {
+                if (seq.getSelection) {
+                    var timelineSelection = seq.getSelection();
+                    if (timelineSelection && timelineSelection.length > 0) {
+                        for (var sIdx = 0; sIdx < timelineSelection.length; sIdx++) {
+                            var sItem = timelineSelection[sIdx];
+                            var sPath = _extractItemMediaPath(sItem);
+                            if (sPath) {
+                                _addUniqueClipItem(results, sItem.name || (sItem.projectItem ? sItem.projectItem.name : ""), sPath);
+                            }
+                        }
+                    }
+                }
+            } catch (eSel) {
+                _ocLog("seq.getSelection error: " + eSel.toString());
+            }
+
+            // Priority 1B: Scan video and audio tracks for isSelected()
+            if (results.length === 0) {
+                for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+                    var track = seq.videoTracks[t];
+                    for (var c = 0; c < track.clips.numItems; c++) {
+                        var clip = track.clips[c];
+                        var selected = false;
+                        try {
+                            if (typeof clip.isSelected === "function") selected = clip.isSelected();
+                            else if (typeof clip.isSelected === "boolean") selected = clip.isSelected;
+                        } catch (e) { _ocLog(e.toString()); }
+                        if (selected) {
+                            var p = _extractItemMediaPath(clip);
+                            if (p) _addUniqueClipItem(results, clip.name || "", p);
+                        }
+                    }
+                }
+                for (var t2 = 0; t2 < seq.audioTracks.numTracks; t2++) {
+                    var atrack = seq.audioTracks[t2];
+                    for (var c2 = 0; c2 < atrack.clips.numItems; c2++) {
+                        var aclip = atrack.clips[c2];
+                        var asel = false;
+                        try {
+                            if (typeof aclip.isSelected === "function") asel = aclip.isSelected();
+                            else if (typeof aclip.isSelected === "boolean") asel = aclip.isSelected;
+                        } catch (e3) {}
+                        if (asel) {
+                            var ap = _extractItemMediaPath(aclip);
+                            if (ap) _addUniqueClipItem(results, aclip.name || "", ap);
+                        }
+                    }
+                }
+            }
+
+            // Priority 1C: If no clip explicitly selected, pick clip under CTI (playhead)
+            if (results.length === 0) {
+                try {
+                    var cti = seq.getPlayerPosition();
+                    if (cti) {
+                        var ctiSec = cti.seconds;
+                        for (var vt = seq.videoTracks.numTracks - 1; vt >= 0; vt--) {
+                            var vtr = seq.videoTracks[vt];
+                            for (var vc = 0; vc < vtr.clips.numItems; vc++) {
+                                var vclip = vtr.clips[vc];
+                                if (vclip.start && vclip.end && vclip.start.seconds <= ctiSec && ctiSec <= vclip.end.seconds) {
+                                    var vp = _extractItemMediaPath(vclip);
+                                    if (vp) {
+                                        _addUniqueClipItem(results, vclip.name || "", vp);
+                                        break;
+                                    }
+                                }
+                            }
+                            if (results.length > 0) break;
+                        }
+                        if (results.length === 0) {
+                            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                                var atr = seq.audioTracks[at];
+                                for (var ac = 0; ac < atr.clips.numItems; ac++) {
+                                    var aclip = atr.clips[ac];
+                                    if (aclip.start && aclip.end && aclip.start.seconds <= ctiSec && ctiSec <= aclip.end.seconds) {
+                                        var ap = _extractItemMediaPath(aclip);
+                                        if (ap) {
+                                            _addUniqueClipItem(results, aclip.name || "", ap);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (results.length > 0) break;
+                            }
+                        }
+                    }
+                } catch (eCti) {
+                    _ocLog("CTI fallback error: " + eCti.toString());
+                }
+            }
+
+            // Priority 1D: If still nothing, pick first clip on active sequence
+            if (results.length === 0) {
+                try {
+                    for (var ft = 0; ft < seq.videoTracks.numTracks; ft++) {
+                        var ftr = seq.videoTracks[ft];
+                        for (var fc = 0; fc < ftr.clips.numItems; fc++) {
+                            var fclip = ftr.clips[fc];
+                            var fp = _extractItemMediaPath(fclip);
+                            if (fp) {
+                                _addUniqueClipItem(results, fclip.name || "", fp);
+                                break;
+                            }
+                        }
+                        if (results.length > 0) break;
+                    }
+                    if (results.length === 0) {
+                        for (var fat = 0; fat < seq.audioTracks.numTracks; fat++) {
+                            var fatr = seq.audioTracks[fat];
+                            for (var fac = 0; fac < fatr.clips.numItems; fac++) {
+                                var faclip = fatr.clips[fac];
+                                var fap = _extractItemMediaPath(faclip);
+                                if (fap) {
+                                    _addUniqueClipItem(results, faclip.name || "", fap);
+                                    break;
+                                }
+                            }
+                            if (results.length > 0) break;
+                        }
+                    }
+                } catch (eFirst) {
+                    _ocLog("First clip fallback error: " + eFirst.toString());
+                }
+            }
+        }
+    } catch (e5) {
+        _ocLog("getSelectedClips sequence error: " + e5.toString());
+    }
+
+    // Method 2: Project panel selection
+    if (results.length === 0) {
+        try {
+            var viewIDs = app.getProjectViewIDs ? app.getProjectViewIDs() : null;
+            if (viewIDs && viewIDs.length > 0) {
+                var selItems = app.getProjectViewSelection(viewIDs[0]);
+                if (selItems && selItems.length > 0) {
+                    for (var s = 0; s < selItems.length; s++) {
+                        try {
+                            var sp = _extractItemMediaPath(selItems[s]);
+                            if (sp) _addUniqueClipItem(results, selItems[s].name || "", sp);
+                        } catch (e6) {}
+                    }
+                }
+            }
+        } catch (e7) {}
+    }
+
+    // Method 3: Source monitor
+    if (results.length === 0) {
+        try {
+            var srcMon = app.sourceMonitor;
+            if (srcMon && srcMon.projectItem) {
+                var smp = _extractItemMediaPath(srcMon.projectItem);
+                if (smp) _addUniqueClipItem(results, srcMon.projectItem.name || "", smp);
+            }
+        } catch (e8) {}
+    }
+
+    if (results.length === 0) {
+        return JSON.stringify({ error: "nothing_selected" });
+    }
+    return JSON.stringify(results);
+}
+
+
+/**
+ * Alias for getSelectedClips - used by the panel for timeline selection.
+ * Returns the first selected clip's path and name.
+ */
+function getTimelineSelection() {
+    var result = getSelectedClips();
+    try {
+        var parsed = JSON.parse(result);
+        if (parsed.error) {
+            return "null";
+        }
+        if (parsed.length > 0) {
+            return JSON.stringify({ path: parsed[0].path, name: parsed[0].name });
+        }
+    } catch (e) {
+        _ocLog("getTimelineSelection error: " + e.toString());
+    }
+    return "null";
+}
+
+
+/**
+ * Import XML file into project (for FCP XML edit lists).
+ */
+function importXMLToProject(xmlPath) {
+    _ocLog("importXMLToProject: " + xmlPath);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+    try {
+        var xmlFile = new File(xmlPath);
+        if (!xmlFile.exists) {
+            return JSON.stringify({ error: "XML file not found: " + xmlPath });
+        }
+        var xmlPresenceBefore = _ocProjectPathPresence([xmlPath]);
+        var xmlSequencesBefore = _ocSequenceSnapshot();
+        
+        // Track how many sequences we had before import
+        var seqCountBefore = 0;
+        try {
+            seqCountBefore = app.project.sequences.numSequences;
+        } catch (e) {}
+        
+        // Import the XML file into the project root
+        // Premiere Pro will create a sequence from FCP XML
+        // importFiles() returns undefined in many Premiere versions,
+        // so we don't rely on the return value.  If it throws, we catch it.
+        app.project.importFiles([xmlPath], false, app.project.rootItem, false);
+        
+        // Poll for import to complete (avoids blocking Premiere UI with long sleep)
+        for (var _poll = 0; _poll < 20; _poll++) {
+            $.sleep(50);
+            try {
+                if (app.project.sequences.numSequences > seqCountBefore) break;
+            } catch (e) {}
+        }
+        
+        // Try to find and open the newly created sequence
+        var seqCountAfter = 0;
+        try {
+            seqCountAfter = app.project.sequences.numSequences;
+        } catch (e) {}
+        
+        _ocLog("Sequences before: " + seqCountBefore + ", after: " + seqCountAfter);
+        
+        // If a new sequence was created, open it
+        if (seqCountAfter > seqCountBefore) {
+            try {
+                // Get the last sequence (most recently added)
+                var newSeq = app.project.sequences[seqCountAfter - 1];
+                if (newSeq) {
+                    app.project.openSequence(newSeq.sequenceID);
+                    _ocLog("Opened sequence: " + newSeq.name);
+                    return JSON.stringify(_ocAttachInterchangeImportVerification({
+                        success: true, 
+                        message: "Imported and opened sequence: " + newSeq.name,
+                        sequence_name: newSeq.name
+                    }, "importXMLToProject", xmlPath, xmlPresenceBefore, xmlSequencesBefore));
+                }
+            } catch (e2) {
+                _ocLog("Could not open new sequence: " + e2.toString());
+            }
+        }
+        
+        // Fallback: Try to find sequence by searching project items
+        try {
+            var root = app.project.rootItem;
+            for (var i = root.children.numItems - 1; i >= 0; i--) {
+                var item = root.children[i];
+                try {
+                    // type 1 = sequence
+                    if (item.type === 1) {
+                        // Check if it's an OpenCut sequence by name
+                        if (item.name && item.name.indexOf("OpenCut") >= 0) {
+                            // Open this sequence
+                            app.project.openSequence(item.sequenceID);
+                            _ocLog("Found and opened: " + item.name);
+                            return JSON.stringify(_ocAttachInterchangeImportVerification({
+                                success: true,
+                                message: "Opened sequence: " + item.name,
+                                sequence_name: item.name
+                            }, "importXMLToProject", xmlPath, xmlPresenceBefore, xmlSequencesBefore));
+                        }
+                    }
+                } catch (e3) {}
+            }
+        } catch (e4) {
+            _ocLog("Search error: " + e4.toString());
+        }
+        
+        return JSON.stringify(_ocAttachInterchangeImportVerification({
+            success: true, 
+            message: "XML imported. Look for the new sequence in Project panel." 
+        }, "importXMLToProject", xmlPath, xmlPresenceBefore, xmlSequencesBefore));
+    } catch (e) {
+        _ocLog("importXMLToProject error: " + e.toString());
+        return JSON.stringify({ error: "Import failed: " + e.toString() });
+    }
+}
+
+
+/**
+ * Import overlay video into project (alias for importCaptionOverlay).
+ */
+function importOverlayToProject(overlayPath) {
+    return importCaptionOverlay(overlayPath);
+}
+
+
+/**
+ * Get all clips in the active sequence.
+ */
+function getSequenceClips() {
+    var clips = [];
+    try {
+        if (!app || !app.project) return JSON.stringify({ error: "No project open" });
+        var seq = app.project.activeSequence;
+        if (!seq) return JSON.stringify({ error: "No active sequence" });
+
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var path = "";
+                try { path = _normalizeMediaPath(clip.projectItem.getMediaPath()); } catch (e) { _ocLog(e.toString()); }
+                clips.push({
+                    name: clip.name || "",
+                    path: path,
+                    inPoint: clip.start ? clip.start.seconds : 0,
+                    outPoint: clip.end ? clip.end.seconds : 0,
+                    trackIndex: t,
+                    trackType: "video"
+                });
+            }
+        }
+
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                var aPath = "";
+                try { aPath = _normalizeMediaPath(aClip.projectItem.getMediaPath()); } catch (e2) { _ocLog(e2.toString()); }
+                clips.push({
+                    name: aClip.name || "",
+                    path: aPath,
+                    inPoint: aClip.start ? aClip.start.seconds : 0,
+                    outPoint: aClip.end ? aClip.end.seconds : 0,
+                    trackIndex: a,
+                    trackType: "audio"
+                });
+            }
+        }
+    } catch (e3) {
+        return JSON.stringify({ error: e3.toString() });
+    }
+    return JSON.stringify(clips);
+}
+
+
+/**
+ * Browse for a media file.
+ */
+function browseForFile() {
+    try {
+        var filter = ($.os && $.os.indexOf("Windows") >= 0)
+            ? "Media Files:*.mp4;*.mov;*.avi;*.mkv;*.wmv;*.webm;*.mxf;*.wav;*.mp3;*.aac;*.m4a;*.flac;*.png;*.jpg,All Files:*.*"
+            : function (f) { return true; };
+        var file = File.openDialog("Select Media File", filter, false);
+        if (file && file.exists) return file.fsName;
+        return "null";
+    } catch (e) {
+        return "null";
+    }
+}
+
+/**
+ * Browse for a folder / directory.
+ */
+function browseForFolder() {
+    try {
+        var folder = Folder.selectDialog("Select Folder");
+        if (folder && folder.exists) return folder.fsName;
+        return "null";
+    } catch (e) {
+        return "null";
+    }
+}
+
+
+/**
+ * Import a file and open it as a sequence.
+ */
+function importAndOpenXml(filePath) {
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+    try {
+        var file = new File(filePath);
+        if (!file.exists) return JSON.stringify({ error: "File not found: " + filePath });
+
+        var openXmlPresenceBefore = _ocProjectPathPresence([filePath]);
+        var openXmlSequencesBefore = _ocSequenceSnapshot();
+        var seqCountBefore = 0;
+        try { seqCountBefore = app.project.sequences.numSequences; } catch (e) {}
+
+        // importFiles() returns undefined in many Premiere versions
+        app.project.importFiles(
+            [filePath], true, app.project.rootItem, false
+        );
+
+        var seqCountAfter = 0;
+        try { seqCountAfter = app.project.sequences.numSequences; } catch (e) {}
+        if (seqCountAfter > seqCountBefore) {
+            var newSeq = app.project.sequences[seqCountAfter - 1];
+            if (newSeq) {
+                app.project.openSequence(newSeq.sequenceID);
+                return JSON.stringify(_ocAttachInterchangeImportVerification(
+                    { success: true, sequenceName: newSeq.name },
+                    "importAndOpenXml",
+                    filePath,
+                    openXmlPresenceBefore,
+                    openXmlSequencesBefore
+                ));
+            }
+        }
+        return JSON.stringify(_ocAttachInterchangeImportVerification(
+            { success: true, sequenceName: "" },
+            "importAndOpenXml",
+            filePath,
+            openXmlPresenceBefore,
+            openXmlSequencesBefore
+        ));
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Get project info.
+ */
+function getProjectInfo() {
+    var info = {
+        projectName: "",
+        projectPath: "",
+        sequenceName: "",
+        sequenceFrameRate: 0,
+        numSequences: 0
+    };
+    if (!app || !app.project) return JSON.stringify(info);
+    try {
+        info.projectName = app.project.name || "";
+        info.projectPath = app.project.path || "";
+        info.numSequences = app.project.sequences.numSequences;
+        var seq = app.project.activeSequence;
+        if (seq) {
+            info.sequenceName = seq.name || "";
+            try {
+                var settings = seq.getSettings();
+                if (settings && settings.videoFrameRate && settings.videoFrameRate.seconds > 0) {
+                    info.sequenceFrameRate = 1 / settings.videoFrameRate.seconds;
+                }
+            } catch (e) { _ocLog(e.toString()); }
+        }
+    } catch (e2) {}
+    return JSON.stringify(info);
+}
+
+
+/**
+ * Get the project folder path.
+ */
+function getProjectFolder() {
+    if (!app || !app.project) return "";
+    try {
+        var p = app.project.path;
+        if (p) {
+            var f = new File(p);
+            if (f.parent) {
+                return f.parent.fsName;
+            }
+        }
+    } catch (e) { _ocLog(e.toString()); }
+    return "";
+}
+
+
+/**
+ * Open the folder containing a generated deliverable in the system browser.
+ * Returns JSON so the CEP panel can surface host and filesystem failures.
+ */
+function openFolderInFinder(path) {
+    try {
+        if (!path) {
+            return JSON.stringify({ error: "No file path supplied" });
+        }
+        var cleanPath = String(path).replace(/\\/g, "/");
+        var folder = new Folder(cleanPath);
+        var file = new File(cleanPath);
+        var targetFolder = null;
+        if (folder.exists) {
+            targetFolder = folder;
+        } else if (file.parent && file.parent.exists) {
+            targetFolder = file.parent;
+        } else {
+            targetFolder = folder;
+        }
+        if (!targetFolder || !targetFolder.exists) {
+            targetFolder = new Folder(path);
+        }
+        if (!targetFolder || !targetFolder.exists) {
+            return JSON.stringify({ error: "Output folder does not exist" });
+        }
+        var opened = targetFolder.execute();
+        return JSON.stringify({ success: true, path: targetFolder.fsName });
+    } catch (e) {
+        _ocLog("openFolderInFinder error: " + e.toString());
+        return JSON.stringify({ error: "Could not open output folder: " + e.toString() });
+    }
+}
+
+/**
+ * Open a file in the system default application.
+ */
+function openFileInDefaultApp(path) {
+    try {
+        if (!path) {
+            return JSON.stringify({ error: "No file path supplied" });
+        }
+        var cleanPath = String(path).replace(/\\/g, "/");
+        var file = new File(cleanPath);
+        if (!file.exists) {
+            file = new File(path);
+        }
+        if (!file.exists) {
+            return JSON.stringify({ error: "File does not exist: " + path });
+        }
+        var opened = file.execute();
+        return JSON.stringify({ success: true, path: file.fsName });
+    } catch (e) {
+        _ocLog("openFileInDefaultApp error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+
+/**
+ * Check if the current project has been saved (has a file path).
+ * Returns JSON: {saved: true/false, path: "..."}
+ */
+function isProjectSaved() {
+    if (!app || !app.project) return '{"saved":false,"path":""}';
+    try {
+        var p = app.project.path;
+        if (p && p.length > 0) {
+            return '{"saved":true,"path":"' + p.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r") + '"}';
+        }
+        return '{"saved":false,"path":""}';
+    } catch (e) {
+        _ocLog("isProjectSaved error: " + e.toString());
+        return '{"saved":false,"path":""}';
+    }
+}
+
+
+/**
+ * Apply silence-removed edits directly to the timeline.
+ *
+ * Creates a new sequence and inserts the clip multiple times,
+ * once per speech segment, with proper in/out points.
+ * This bypasses XML import entirely -- no Locate Media issues.
+ *
+ * @param {string} segmentsJson - JSON array of {start, end} objects (seconds)
+ * @param {string} mediaPath    - Full path to the source media file
+ * @returns {string} JSON result: {success, sequenceName, segments} or {error}
+ */
+function applyEditsToTimeline(segmentsJson, mediaPath) {
+    var TICKS_PER_SECOND = 254016000000; // Premiere Pro internal time base
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    var segments;
+    try {
+        segments = JSON.parse(segmentsJson);
+    } catch (e) {
+        return JSON.stringify({ error: "Invalid segments data: " + e.toString() });
+    }
+
+    if (!segments || segments.length === 0) {
+        return JSON.stringify({ error: "No speech segments found" });
+    }
+
+    // Find the project item by matching its media path
+    var projectItem = _findProjectItemByPath(app.project.rootItem, mediaPath, 0);
+
+    if (!projectItem) {
+        return JSON.stringify({ error: "Media not found in project. Import the file first, then try again." });
+    }
+
+    // Build sequence name from the clip
+    var clipName = projectItem.name || "Edit";
+    // Remove file extension for cleaner name
+    clipName = clipName.replace(/\.[^.]+$/, "");
+    var seqName = "OpenCut - " + clipName;
+    var editSequencesBefore = _ocSequenceSnapshot();
+
+    // Create a new sequence
+    try {
+        app.project.createNewSequence(seqName);
+    } catch (e) {
+        return JSON.stringify({ error: "Could not create sequence: " + e.toString() });
+    }
+
+    var seq = app.project.activeSequence;
+    if (!seq) {
+        return JSON.stringify({ error: "Sequence creation failed" });
+    }
+
+    var videoTrack = seq.videoTracks[0];
+    if (!videoTrack) {
+        return JSON.stringify({ error: "No video track in sequence" });
+    }
+
+    // Insert each speech segment as a clip with proper in/out points
+    var timelinePos = 0;
+    var insertedCount = 0;
+
+    for (var i = 0; i < segments.length; i++) {
+        var seg = segments[i];
+        var segStart = Number(seg.start);
+        var segEnd = Number(seg.end);
+        if (isNaN(segStart) || isNaN(segEnd) || segStart < 0) continue;
+        var segDuration = segEnd - segStart;
+
+        // Skip zero-length, negative, or near-zero segments
+        if (segDuration <= 0.01) continue;
+
+        // Set the project item's in/out points to this segment
+        // This controls what portion of the clip gets inserted
+        var needsReset = false;
+        try {
+            projectItem.setInPoint(segStart, 4);  // 4 = all media types
+            projectItem.setOutPoint(segEnd, 4);
+            needsReset = true;
+        } catch (e) {
+            // If setInPoint/setOutPoint not available, skip this segment
+            continue;
+        }
+
+        // Calculate timeline position in ticks
+        var t = new Time();
+        t.ticks = String(Math.round(timelinePos * TICKS_PER_SECOND));
+
+        // Insert the clip at this position
+        try {
+            videoTrack.insertClip(projectItem, t);
+            insertedCount++;
+            timelinePos += segDuration;
+        } catch (e) {
+            // Try overwriteClip as fallback
+            try {
+                videoTrack.overwriteClip(projectItem, t);
+                insertedCount++;
+                timelinePos += segDuration;
+            } catch (e2) {
+                // Skip this segment
+            }
+        }
+    }
+
+    // Always reset the project item's in/out points (even if loop threw)
+    try {
+        projectItem.clearInPoint(4);
+        projectItem.clearOutPoint(4);
+    } catch (e) {
+        try {
+            projectItem.setInPoint(0, 4);
+            projectItem.setOutPoint(86400, 4);
+        } catch (e2) {}
+    }
+
+    if (insertedCount === 0) {
+        var emptyEditSequencesAfter = _ocSequenceSnapshot();
+        var canVerifyEmptySequence = editSequencesBefore !== null && emptyEditSequencesAfter !== null;
+        var verifiedEmptySequence = canVerifyEmptySequence ? Math.min(
+            1,
+            _ocFingerprintAddedCount(editSequencesBefore, emptyEditSequencesAfter)
+        ) : null;
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { error: "Could not insert any clips. Your Premiere version may not support this method. Use Import XML instead." },
+            _ocHostWriteVerification(
+                "applyEditsToTimeline",
+                1 + segments.length,
+                1,
+                verifiedEmptySequence,
+                _ocVerificationStatus(1, verifiedEmptySequence, canVerifyEmptySequence),
+                canVerifyEmptySequence ? "Project.sequences fingerprint diff" : "unavailable: Project.sequences",
+                { sequence_count: editSequencesBefore === null ? null : editSequencesBefore.length },
+                { sequence_count: emptyEditSequencesAfter === null ? null : emptyEditSequencesAfter.length, track_item_count: 0 },
+                "The sequence creation was re-read, but no requested segment insertion succeeded."
+            )
+        ));
+    }
+
+    var editSequencesAfter = _ocSequenceSnapshot();
+    var editClipsAfter = _ocSequenceClipSnapshot(seq);
+    var canVerifyEditSequence = editSequencesBefore !== null && editSequencesAfter !== null;
+    var canVerifyEditClips = editClipsAfter !== null;
+    var verifiedEditSequence = canVerifyEditSequence ? Math.min(
+        1,
+        _ocFingerprintAddedCount(editSequencesBefore, editSequencesAfter)
+    ) : 0;
+    var verifiedEditClips = canVerifyEditClips ? Math.min(insertedCount, editClipsAfter.length) : 0;
+    var reportedEditWrites = 1 + insertedCount;
+    var verifiedEditWrites = verifiedEditSequence + verifiedEditClips;
+    var canVerifyEditWrites = canVerifyEditSequence || canVerifyEditClips;
+    var editStatus = _ocVerificationStatus(reportedEditWrites, verifiedEditWrites, canVerifyEditWrites);
+    return JSON.stringify(_ocAttachHostWriteVerification({
+        success: editStatus !== "failed",
+        sequenceName: seqName,
+        segments: insertedCount,
+        duration: timelinePos
+    }, _ocHostWriteVerification(
+        "applyEditsToTimeline",
+        1 + segments.length,
+        reportedEditWrites,
+        canVerifyEditWrites ? verifiedEditWrites : null,
+        editStatus,
+        canVerifyEditWrites ? "Project.sequences plus video/audio track-item traversal" : "unavailable: sequence and track traversal",
+        { sequence_count: editSequencesBefore === null ? null : editSequencesBefore.length, track_item_count: 0 },
+        {
+            sequence_count: editSequencesAfter === null ? null : editSequencesAfter.length,
+            track_item_count: editClipsAfter === null ? null : editClipsAfter.length
+        },
+        "The new sequence and inserted clip boundaries are re-read after createNewSequence()/insertClip()."
+    )));
+}
+
+
+/**
+ * Find a project item by its media file path (recursive search).
+ */
+function _findProjectItemByPath(parent, targetPath, depth) {
+    if (depth > 50) return null;
+    // Normalize target once at the top-level call (depth 0), reuse on recursion
+    var normalizedTarget = (depth === 0) ? _normalizeMediaPath(targetPath).toLowerCase() : targetPath;
+    var numChildren = _getProjectChildCount(parent);
+    if (!numChildren) return null;
+    for (var i = 0; i < numChildren; i++) {
+        try {
+            var item = parent.children[i];
+            if (!item) continue;
+            var isBin = false;
+            try { isBin = (item.type === 2); } catch (e2) {}
+            if (isBin) {
+                // Bin -- recurse with already-normalized target
+                var found = _findProjectItemByPath(item, normalizedTarget, depth + 1);
+                if (found) return found;
+            } else {
+                var p = "";
+                try { p = _normalizeMediaPath(item.getMediaPath()); } catch (e3) { _ocLog(e3.toString()); }
+                if (p && p.toLowerCase() === normalizedTarget) return item;
+            }
+        } catch (e) { _ocLog(e.toString()); }
+    }
+    return null;
+}
+
+
+function _ocHostVersionInfo() {
+    var version = "";
+    var build = "";
+    try { version = String(app.version || ""); } catch (e) {}
+    try { build = String(app.build || app.buildNumber || ""); } catch (e2) {}
+    return {
+        bridge: "cep",
+        app_name: "Premiere Pro",
+        version: version,
+        build: build
+    };
+}
+
+
+// F319 — all host mutations return the same independently-read verification
+// contract.  Keep this ES3-compatible: ExtendScript in legacy Premiere hosts
+// cannot parse let/const, arrow functions, Set, or Map.
+function _ocHostWriteVerification(action, attempted, reported, verified, status, readBackMethod, beforeState, afterState, detail) {
+    var host = _ocHostVersionInfo();
+    return {
+        schema: "opencut.host_write_verification.v1",
+        action: action || "unknown",
+        host_version: host.version,
+        host: host,
+        attempted_count: attempted == null ? null : Number(attempted),
+        reported_count: reported == null ? null : Number(reported),
+        verified_count: verified == null ? null : Number(verified),
+        verification_status: status || "unverified",
+        read_back_method: readBackMethod || "unavailable",
+        before_state: beforeState || null,
+        after_state: afterState || null,
+        detail: detail || ""
+    };
+}
+
+
+function _ocAttachHostWriteVerification(result, verification) {
+    result = result || {};
+    result.host_write_verification = verification;
+    result.attempted_count = verification.attempted_count;
+    result.reported_count = verification.reported_count;
+    result.verified_count = verification.verified_count;
+    result.verification_status = verification.verification_status;
+    result.read_back_method = verification.read_back_method;
+    result.host_version = result.host_version || verification.host_version;
+    result.host = result.host || verification.host;
+
+    if (verification.verification_status === "failed") {
+        result.success = false;
+        result.ok = false;
+        result.error_code = "HOST_WRITE_NOT_APPLIED";
+        result.error = result.error || "Premiere reported success but the independent read-back found no timeline or project change.";
+    } else if (verification.verification_status === "unverified") {
+        result.unverified = true;
+        result.warning = result.warning || "Premiere accepted the request, but this operation has no independent read-back API and remains unverified.";
+    } else if (verification.verification_status === "partial") {
+        result.warning = result.warning || "Premiere applied only part of the requested host write; review the verified count before continuing.";
+    }
+    return result;
+}
+
+
+function _ocFingerprintDeltaCount(beforeItems, afterItems) {
+    var remaining = {};
+    var i;
+    for (i = 0; i < afterItems.length; i++) {
+        var afterKey = String(afterItems[i]);
+        remaining[afterKey] = (remaining[afterKey] || 0) + 1;
+    }
+    var removed = 0;
+    for (i = 0; i < beforeItems.length; i++) {
+        var beforeKey = String(beforeItems[i]);
+        if (remaining[beforeKey]) {
+            remaining[beforeKey]--;
+        } else {
+            removed++;
+        }
+    }
+    return removed;
+}
+
+
+function _ocFingerprintAddedCount(beforeItems, afterItems) {
+    return _ocFingerprintDeltaCount(afterItems, beforeItems);
+}
+
+
+function _ocSequenceClipSnapshot(seq) {
+    if (!seq) return null;
+    var result = [];
+    var readable = false;
+    var kinds = ["video", "audio"];
+    var collections = [seq ? seq.videoTracks : null, seq ? seq.audioTracks : null];
+    for (var kindIndex = 0; kindIndex < collections.length; kindIndex++) {
+        var tracks = collections[kindIndex];
+        var trackCount = 0;
+        try {
+            trackCount = tracks ? tracks.numTracks : 0;
+            if (tracks && typeof trackCount === "number") readable = true;
+        } catch (e0) { trackCount = 0; }
+        for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+            var track = tracks[trackIndex];
+            var clipCount = 0;
+            try { clipCount = track && track.clips ? track.clips.numItems : 0; } catch (e1) { clipCount = 0; }
+            for (var clipIndex = 0; clipIndex < clipCount; clipIndex++) {
+                try {
+                    var clip = track.clips[clipIndex];
+                    if (!clip) continue;
+                    var start = clip.start && clip.start.seconds != null ? Number(clip.start.seconds) : 0;
+                    var end = clip.end && clip.end.seconds != null ? Number(clip.end.seconds) : 0;
+                    var nodeId = "";
+                    try { nodeId = clip.projectItem && clip.projectItem.nodeId ? String(clip.projectItem.nodeId) : ""; } catch (e2) {}
+                    // Disabled state is part of the fingerprint so a
+                    // non-destructive cut, which leaves every clip in place,
+                    // still produces an observable diff. Without it, disabling
+                    // would read back as "nothing changed" and fail closed.
+                    var disabledState = "";
+                    try { disabledState = clip.disabled == null ? "" : String(clip.disabled); } catch (e4) {}
+                    result.push(kinds[kindIndex] + "|" + trackIndex + "|" + nodeId + "|" + String(clip.name || "") + "|" + start.toFixed(6) + "|" + end.toFixed(6) + "|" + disabledState);
+                } catch (e3) {
+                    _ocLog("clip read-back failed: " + e3.toString());
+                }
+            }
+        }
+    }
+    return readable ? result : null;
+}
+
+
+/**
+ * Boundary slop for cut planning. Frame rounding must not push a clip that
+ * lines up with the cut onto the trim path.
+ */
+var OC_CUT_TOLERANCE_SECONDS = 0.01;
+
+
+/** Appends a message unless it is already in the list. */
+function _ocPushOnce(list, message) {
+    for (var i = 0; i < list.length; i++) {
+        if (list[i] === message) return;
+    }
+    list.push(message);
+}
+
+
+/**
+ * Decides what a cut range does to one clip, mirroring the UXP planner in
+ * extension/com.opencut.uxp/uxp-cut-planner.js so a reviewed cut produces the
+ * same timeline whichever panel is open.
+ *
+ * A clip the range covers is removed. A clip crossing one edge is trimmed back
+ * to that edge, with its source point pulled in by the same amount so the media
+ * outside the range keeps playing the frames it always did. A clip enclosing
+ * the whole range would need a razor, and cutting a hole in it by any other
+ * means loses media the operator kept, so it is refused and reported.
+ */
+function _ocPlanClipCut(clip, cutStart, cutEnd) {
+    var slop = OC_CUT_TOLERANCE_SECONDS;
+    var clipStart = null;
+    var clipEnd = null;
+    try {
+        clipStart = clip && clip.start && clip.start.seconds != null ? Number(clip.start.seconds) : null;
+        clipEnd = clip && clip.end && clip.end.seconds != null ? Number(clip.end.seconds) : null;
+    } catch (e0) { clipStart = null; clipEnd = null; }
+    if (clipStart === null || clipEnd === null || isNaN(clipStart) || isNaN(clipEnd)) {
+        return { action: "blocked", reason: "clip boundaries are unreadable" };
+    }
+    if (clipEnd <= cutStart + slop || clipStart >= cutEnd - slop) return { action: "none" };
+    if (clipStart >= cutStart - slop && clipEnd <= cutEnd + slop) return { action: "remove" };
+
+    var crossesStart = clipStart < cutStart - slop;
+    var crossesEnd = clipEnd > cutEnd + slop;
+    if (crossesStart && crossesEnd) {
+        return { action: "blocked", reason: "clip encloses the cut range and would need a razor" };
+    }
+
+    // The trim arithmetic assumes one second of source per second of timeline.
+    var speed = null;
+    try { speed = clip.speed == null ? null : Number(clip.speed); } catch (e1) { speed = null; }
+    if (speed !== null && !isNaN(speed) && Math.abs(speed - 1) > 0.000001) {
+        return { action: "blocked", reason: "clip is retimed, so a source-point trim would land off-frame" };
+    }
+
+    var inPoint = null;
+    var outPoint = null;
+    try {
+        inPoint = clip.inPoint && clip.inPoint.seconds != null ? Number(clip.inPoint.seconds) : null;
+        outPoint = clip.outPoint && clip.outPoint.seconds != null ? Number(clip.outPoint.seconds) : null;
+    } catch (e2) { inPoint = null; outPoint = null; }
+    if (inPoint === null || outPoint === null || isNaN(inPoint) || isNaN(outPoint)) {
+        return { action: "blocked", reason: "clip source in/out points are unreadable" };
+    }
+
+    if (crossesStart) {
+        return {
+            action: "trim_head",
+            start: clipStart,
+            end: cutStart,
+            inPoint: inPoint,
+            outPoint: outPoint - (clipEnd - cutStart)
+        };
+    }
+    return {
+        action: "trim_tail",
+        start: cutEnd,
+        end: clipEnd,
+        inPoint: inPoint + (cutEnd - clipStart),
+        outPoint: outPoint
+    };
+}
+
+
+/**
+ * Applies one planned trim. ExtendScript's boundary and source-point setters
+ * have behaved inconsistently across Premiere versions, so nothing here is
+ * trusted: the caller re-reads the clip and compares it against the boundaries
+ * this plan promised.
+ */
+function _ocApplyClipTrim(clip, plan) {
+    try {
+        var boundary = new Time();
+        var source = new Time();
+        if (plan.action === "trim_head") {
+            boundary.seconds = plan.end;
+            source.seconds = plan.outPoint;
+            clip.end = boundary;
+            clip.outPoint = source;
+        } else {
+            boundary.seconds = plan.start;
+            source.seconds = plan.inPoint;
+            clip.start = boundary;
+            clip.inPoint = source;
+        }
+        return true;
+    } catch (e) {
+        _ocLog("clip trim failed: " + e.toString());
+        return false;
+    }
+}
+
+
+/**
+ * Identity for a clip that survives a trim, so the read-back can find the same
+ * clip again. Boundaries are deliberately absent: they are what a trim changes.
+ */
+function _ocClipIdentity(kind, trackIndex, clip) {
+    var nodeId = "";
+    try { nodeId = clip.projectItem && clip.projectItem.nodeId ? String(clip.projectItem.nodeId) : ""; } catch (e) {}
+    return kind + "|" + trackIndex + "|" + nodeId + "|" + String(clip.name || "");
+}
+
+
+/**
+ * Every clip on the timeline keyed by the identity above, for checking a cut
+ * against the boundaries its plan predicted. An identity that appears twice is
+ * dropped, because confirming a trim against a lookalike is worse than
+ * reporting that it could not be confirmed.
+ */
+function _ocClipBoundsById(seq) {
+    if (!seq) return null;
+    var bounds = {};
+    var counts = {};
+    var readable = false;
+    var kinds = ["video", "audio"];
+    var collections = [seq.videoTracks, seq.audioTracks];
+    for (var kindIndex = 0; kindIndex < collections.length; kindIndex++) {
+        var tracks = collections[kindIndex];
+        var trackCount = 0;
+        try {
+            trackCount = tracks ? tracks.numTracks : 0;
+            if (tracks && typeof trackCount === "number") readable = true;
+        } catch (e0) { trackCount = 0; }
+        for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+            var track = tracks[trackIndex];
+            var clipCount = 0;
+            try { clipCount = track && track.clips ? track.clips.numItems : 0; } catch (e1) { clipCount = 0; }
+            for (var clipIndex = 0; clipIndex < clipCount; clipIndex++) {
+                try {
+                    var clip = track.clips[clipIndex];
+                    if (!clip) continue;
+                    var id = _ocClipIdentity(kinds[kindIndex], trackIndex, clip);
+                    counts[id] = (counts[id] || 0) + 1;
+                    bounds[id] = {
+                        start: clip.start && clip.start.seconds != null ? Number(clip.start.seconds) : null,
+                        end: clip.end && clip.end.seconds != null ? Number(clip.end.seconds) : null
+                    };
+                } catch (e2) {}
+            }
+        }
+    }
+    if (!readable) return null;
+    for (var key in counts) {
+        if (counts.hasOwnProperty(key) && counts[key] > 1) delete bounds[key];
+    }
+    return bounds;
+}
+
+
+/**
+ * Compares a fresh read against what the cut plans promised. Returns a list of
+ * human-readable mismatches; empty means every cut landed exactly.
+ *
+ * A moved clip keeps its duration, so its end lands where a trim never would.
+ * Without the end in this comparison, a setter that shifts instead of trimming
+ * would look like success.
+ */
+function _ocVerifyCutPlans(expectedTrims, expectedRemovals, bounds) {
+    var mismatches = [];
+    if (bounds === null) return mismatches;
+    var i;
+    for (i = 0; i < expectedRemovals.length; i++) {
+        if (bounds.hasOwnProperty(expectedRemovals[i])) {
+            mismatches.push("still present after removal: " + expectedRemovals[i]);
+        }
+    }
+    for (i = 0; i < expectedTrims.length; i++) {
+        var want = expectedTrims[i];
+        if (!bounds.hasOwnProperty(want.id)) {
+            mismatches.push("trimmed clip disappeared: " + want.id);
+            continue;
+        }
+        var got = bounds[want.id];
+        if (got.start === null || got.end === null) {
+            mismatches.push("clip unreadable after trim: " + want.id);
+            continue;
+        }
+        if (Math.abs(got.start - want.start) > OC_CUT_TOLERANCE_SECONDS ||
+            Math.abs(got.end - want.end) > OC_CUT_TOLERANCE_SECONDS) {
+            mismatches.push(
+                want.id + " expected " + want.start.toFixed(3) + "-" + want.end.toFixed(3) +
+                "s but read back " + got.start.toFixed(3) + "-" + got.end.toFixed(3) + "s"
+            );
+        }
+    }
+    return mismatches;
+}
+
+
+function _ocCaptionTrackSnapshot(seq) {
+    var result = [];
+    var tracks = null;
+    try { tracks = seq ? seq.captionTracks : null; } catch (e0) { tracks = null; }
+    if (!tracks) return null;
+    var trackCount = 0;
+    try { trackCount = tracks ? tracks.numTracks : 0; } catch (e1) { trackCount = 0; }
+    for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+        var track = tracks[trackIndex];
+        var clipCount = 0;
+        try { clipCount = track && track.clips ? track.clips.numItems : 0; } catch (e2) { clipCount = 0; }
+        for (var clipIndex = 0; clipIndex < clipCount; clipIndex++) {
+            try {
+                var clip = track.clips[clipIndex];
+                var start = clip && clip.start && clip.start.seconds != null ? Number(clip.start.seconds) : 0;
+                var end = clip && clip.end && clip.end.seconds != null ? Number(clip.end.seconds) : 0;
+                result.push("caption|" + trackIndex + "|" + String(clip && clip.name || "") + "|" + start.toFixed(6) + "|" + end.toFixed(6));
+            } catch (e3) {
+                _ocLog("caption read-back failed: " + e3.toString());
+            }
+        }
+    }
+    return result;
+}
+
+
+function _ocSequenceMarkerSnapshot(seq) {
+    var result = [];
+    var markers = null;
+    try { markers = seq ? seq.markers : null; } catch (e0) { markers = null; }
+    if (!markers || typeof markers.getFirstMarker !== "function" || typeof markers.getNextMarker !== "function") return null;
+    var marker = null;
+    try { marker = markers.getFirstMarker(); } catch (e1) { return null; }
+    while (marker) {
+        try {
+            var time = 0;
+            try {
+                if (marker.time && marker.time.seconds != null) time = Number(marker.time.seconds);
+                else if (marker.start && marker.start.seconds != null) time = Number(marker.start.seconds);
+            } catch (e2) {}
+            var label = "";
+            try { label = String(marker.name || marker.comments || ""); } catch (e3) {}
+            result.push(time.toFixed(6) + "|" + label);
+        } catch (e4) {
+            _ocLog("marker read-back failed: " + e4.toString());
+        }
+        try { marker = markers.getNextMarker(marker); } catch (e5) { marker = null; }
+    }
+    return result;
+}
+
+
+function _ocProjectItemSnapshot(parent, result, parentNodeId, depth) {
+    if (!result) result = [];
+    if (!parent || depth > 20) return result;
+    var childCount = 0;
+    try { childCount = parent.children.numItems; } catch (e0) { childCount = 0; }
+    for (var i = 0; i < childCount; i++) {
+        try {
+            var item = parent.children[i];
+            if (!item) continue;
+            var nodeId = String(item.nodeId || "");
+            var isBin = false;
+            try { isBin = item.type === 2; } catch (e1) {}
+            result.push((isBin ? "bin" : "item") + "|" + nodeId + "|" + String(item.name || "") + "|" + String(parentNodeId || ""));
+            if (isBin) _ocProjectItemSnapshot(item, result, nodeId, depth + 1);
+        } catch (e2) {
+            _ocLog("project read-back failed: " + e2.toString());
+        }
+    }
+    return result;
+}
+
+
+function _ocPropertyKeySnapshot(property) {
+    if (!property || typeof property.getKeys !== "function") return null;
+    try {
+        var keys = property.getKeys();
+        if (!keys || typeof keys.length !== "number") return [];
+        var result = [];
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            var seconds = key && key.seconds != null ? Number(key.seconds) : Number(key);
+            result.push(isNaN(seconds) ? String(key) : seconds.toFixed(6));
+        }
+        return result;
+    } catch (e) {
+        return null;
+    }
+}
+
+
+function _ocPropertyValueAtTime(property, keyTime) {
+    if (!property) return null;
+    try {
+        if (typeof property.getValueAtKey === "function") return property.getValueAtKey(keyTime);
+    } catch (e0) {}
+    try {
+        if (typeof property.getValueAtTime === "function") return property.getValueAtTime(keyTime);
+    } catch (e1) {}
+    return null;
+}
+
+
+function _ocScalarClose(actual, expected) {
+    var actualNumber = Number(actual);
+    var expectedNumber = Number(expected);
+    return !isNaN(actualNumber) && !isNaN(expectedNumber) && Math.abs(actualNumber - expectedNumber) <= 0.001;
+}
+
+
+function _ocTimeSeconds(value) {
+    if (value == null) return null;
+    try {
+        if (value.seconds != null) return Number(value.seconds);
+        if (value.ticks != null) return Number(value.ticks) / 254016000000;
+    } catch (e) {}
+    var numberValue = Number(value);
+    return isNaN(numberValue) ? null : numberValue;
+}
+
+
+function _ocPositionClose(actual, expectedX, expectedY) {
+    return actual && typeof actual.length === "number" && actual.length >= 2 &&
+        _ocScalarClose(actual[0], expectedX) && _ocScalarClose(actual[1], expectedY);
+}
+
+
+function _ocValuesEqual(left, right) {
+    if (left === right) return true;
+    if (left == null || right == null) return false;
+    try {
+        if (typeof left.length === "number" && typeof right.length === "number") {
+            if (left.length !== right.length) return false;
+            for (var i = 0; i < left.length; i++) {
+                if (!_ocScalarClose(left[i], right[i])) return false;
+            }
+            return true;
+        }
+    } catch (e) {}
+    return _ocScalarClose(left, right);
+}
+
+
+function _ocArrayContains(items, value) {
+    if (!items) return false;
+    for (var i = 0; i < items.length; i++) {
+        if (String(items[i]) === String(value)) return true;
+    }
+    return false;
+}
+
+
+function _ocVerificationStatus(reported, verified, canVerify) {
+    if (!canVerify) return "unverified";
+    if (Number(reported || 0) > 0 && Number(verified || 0) === 0) return "failed";
+    if (Number(verified || 0) < Number(reported || 0)) return "partial";
+    return "verified";
+}
+
+
+function _ocSequenceNameExists(name) {
+    var sequences = null;
+    try { sequences = app && app.project ? app.project.sequences : null; } catch (e0) { sequences = null; }
+    if (!sequences) return null;
+    var count = 0;
+    try { count = sequences.numSequences; } catch (e1) { return null; }
+    for (var i = 0; i < count; i++) {
+        try {
+            if (sequences[i] && String(sequences[i].name || "") === String(name || "")) return true;
+        } catch (e2) {}
+    }
+    return false;
+}
+
+
+function _ocProjectPathPresence(paths) {
+    var result = [];
+    for (var i = 0; i < paths.length; i++) {
+        var found = null;
+        try { found = _findProjectItemByPath(app.project.rootItem, paths[i], 0); } catch (e) { found = null; }
+        result.push(!!found);
+    }
+    return result;
+}
+
+
+function _ocNewProjectPathCount(beforePresence, afterPresence) {
+    var count = 0;
+    for (var i = 0; i < afterPresence.length; i++) {
+        if (!beforePresence[i] && afterPresence[i]) count++;
+    }
+    return count;
+}
+
+
+function _ocPresenceCount(presence) {
+    var count = 0;
+    for (var i = 0; i < presence.length; i++) if (presence[i]) count++;
+    return count;
+}
+
+
+function _ocSequenceSnapshot() {
+    var result = [];
+    var sequences = null;
+    try { sequences = app && app.project ? app.project.sequences : null; } catch (e0) { sequences = null; }
+    if (!sequences) return null;
+    var count = 0;
+    try { count = sequences.numSequences; } catch (e1) { return null; }
+    for (var i = 0; i < count; i++) {
+        try {
+            var sequence = sequences[i];
+            if (sequence) result.push(String(sequence.sequenceID || "") + "|" + String(sequence.name || ""));
+        } catch (e2) {}
+    }
+    return result;
+}
+
+
+function _ocAttachProjectImportVerification(result, action, paths, beforePresence, reported, detail) {
+    var afterPresence = _ocProjectPathPresence(paths);
+    var verified = _ocNewProjectPathCount(beforePresence, afterPresence);
+    var status = _ocVerificationStatus(reported, verified, true);
+    return _ocAttachHostWriteVerification(
+        result,
+        _ocHostWriteVerification(
+            action,
+            paths.length,
+            reported,
+            verified,
+            status,
+            "rootItem recursive media-path lookup",
+            { matching_paths: _ocPresenceCount(beforePresence) },
+            { matching_paths: _ocPresenceCount(afterPresence), newly_added_paths: verified },
+            detail || "Project.importFiles() is verified only when a requested media path appears in a fresh project-tree lookup."
+        )
+    );
+}
+
+
+function _ocAttachInterchangeImportVerification(result, action, path, beforePresence, beforeSequences) {
+    var afterPresence = _ocProjectPathPresence([path]);
+    var afterSequences = _ocSequenceSnapshot();
+    var canReadSequences = beforeSequences !== null && afterSequences !== null;
+    var newProjectItem = _ocNewProjectPathCount(beforePresence, afterPresence);
+    var newSequence = canReadSequences ? _ocFingerprintAddedCount(beforeSequences, afterSequences) : 0;
+    var verified = newProjectItem > 0 || newSequence > 0 ? 1 : 0;
+    var status = _ocVerificationStatus(1, verified, true);
+    return _ocAttachHostWriteVerification(
+        result,
+        _ocHostWriteVerification(
+            action,
+            1,
+            1,
+            verified,
+            status,
+            canReadSequences ? "rootItem media-path lookup plus Project.sequences fingerprint diff" : "rootItem media-path lookup",
+            {
+                matching_paths: _ocPresenceCount(beforePresence),
+                sequence_count: beforeSequences === null ? null : beforeSequences.length
+            },
+            {
+                matching_paths: _ocPresenceCount(afterPresence),
+                sequence_count: afterSequences === null ? null : afterSequences.length
+            },
+            "The non-throwing interchange import is successful only when a fresh project or sequence read finds a new object."
+        )
+    );
+}
+
+
+function _ocPlacementResult(mode, added, message, captionTrackIndex, videoTrackIndex, fallbackPath, warnings) {
+    return {
+        added_to_timeline: !!added,
+        addedToTimeline: !!added,
+        placement_mode: mode,
+        caption_track_index: captionTrackIndex,
+        video_track_index: videoTrackIndex,
+        fallback_path: fallbackPath || "",
+        message: message || "",
+        warnings: warnings || []
+    };
+}
+
+
+function _ocPlaceCaptionItemInSequence(seq, captionItem) {
+    var warnings = [];
+    if (!seq) {
+        return _ocPlacementResult(
+            "project_import",
+            false,
+            "No active sequence. Open a sequence and drag the caption file from the project panel.",
+            null,
+            null,
+            "project_panel",
+            ["no_active_sequence"]
+        );
+    }
+    if (!captionItem) {
+        return _ocPlacementResult(
+            "manual_drag",
+            false,
+            "Caption file imported, but the project item could not be resolved for timeline placement.",
+            null,
+            null,
+            "project_panel",
+            ["caption_project_item_lookup_failed"]
+        );
+    }
+
+    try {
+        if (seq.captionTracks) {
+            var numCaptionTracks = 0;
+            try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e) {}
+
+            if (numCaptionTracks === 0) {
+                try { seq.addCaptionTrack(); } catch (e2) {
+                    warnings.push("caption_track_create_failed: " + e2.toString());
+                    _ocLog("Could not create caption track: " + e2.toString());
+                }
+            }
+
+            try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e3) {}
+            if (numCaptionTracks > 0) {
+                try {
+                    var captionTrack = seq.captionTracks[0];
+                    if (captionTrack) {
+                        captionTrack.insertClip(captionItem, new Time());
+                        return _ocPlacementResult(
+                            "native_caption_track",
+                            true,
+                            "Captions added to timeline caption track",
+                            0,
+                            null,
+                            "",
+                            warnings
+                        );
+                    }
+                } catch (e4) {
+                    warnings.push("caption_track_insert_failed: " + e4.toString());
+                    _ocLog("Caption track insert failed: " + e4.toString());
+                }
+            } else {
+                warnings.push("caption_track_unavailable");
+            }
+        } else {
+            warnings.push("caption_tracks_unavailable");
+        }
+    } catch (e5) {
+        warnings.push("caption_tracks_unavailable: " + e5.toString());
+        _ocLog("captionTracks not available: " + e5.toString());
+    }
+
+    try {
+        if (seq.videoTracks && seq.videoTracks.numTracks > 0) {
+            var targetTrackIdx = seq.videoTracks.numTracks - 1;
+            for (var t = seq.videoTracks.numTracks - 1; t >= 0; t--) {
+                if (seq.videoTracks[t] && seq.videoTracks[t].clips && seq.videoTracks[t].clips.numItems === 0) {
+                    targetTrackIdx = t;
+                    break;
+                }
+            }
+            var vTrack = seq.videoTracks[targetTrackIdx];
+            if (vTrack) {
+                vTrack.insertClip(captionItem, new Time());
+                warnings.push("native_caption_track_unavailable");
+                return _ocPlacementResult(
+                    "video_track",
+                    true,
+                    "Captions added to video track V" + (targetTrackIdx + 1),
+                    null,
+                    targetTrackIdx,
+                    "video_track",
+                    warnings
+                );
+            }
+        }
+        warnings.push("video_track_unavailable");
+    } catch (e6) {
+        warnings.push("video_track_insert_failed: " + e6.toString());
+        _ocLog("Video track insert also failed: " + e6.toString());
+    }
+
+    warnings.push("manual_drag_required");
+    return _ocPlacementResult(
+        "manual_drag",
+        false,
+        "Imported to project panel. Drag onto your timeline to use.",
+        null,
+        null,
+        "project_panel",
+        warnings
+    );
+}
+
+
+function _ocWarningsToString(warnings) {
+    if (!warnings || warnings.length === 0) return "";
+    return warnings.join("; ");
+}
+
+
+/**
+ * Import a caption file (SRT/VTT) into the project and optionally
+ * add it to the active sequence's caption track.
+ *
+ * Premiere Pro 2021+ (v15+) supports native SRT import.
+ * Older versions can import but may not have caption tracks.
+ *
+ * @param {string} captionPath - Full file path to the .srt or .vtt file
+ * @returns {string} JSON: caption import and placement result or {error}
+ */
+function importCaptions(captionPath) {
+    _ocLog("importCaptions: " + captionPath);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    // Validate file exists
+    var captionFile = new File(captionPath);
+    if (!captionFile.exists) {
+        return JSON.stringify({ error: "Caption file not found: " + captionPath });
+    }
+
+    // Check for active sequence
+    var seq = null;
+    try { seq = app.project.activeSequence; } catch (e) {}
+    var captionPresenceBefore = _ocProjectPathPresence([captionPath]);
+    var captionClipsBefore = _ocSequenceClipSnapshot(seq);
+    var captionTracksBefore = _ocCaptionTrackSnapshot(seq);
+    var captionTimelineBefore = (captionClipsBefore || []).concat(captionTracksBefore || []);
+
+    // Step 1: Import the caption file into the project
+    var importSuccess = false;
+    var captionImportReported = 0;
+    var captionItem = null;
+    try {
+        // Check if already imported
+        captionItem = _findProjectItemByPath(app.project.rootItem, captionPath, 0);
+
+        if (!captionItem) {
+            // Find or create an "OpenCut Captions" bin for organization
+            var captionBin = _findOrCreateBin("OpenCut Captions");
+            var targetBin = captionBin || app.project.rootItem;
+
+            // importFiles() returns undefined in many Premiere versions —
+            // check for the item in the project instead of relying on return value
+            app.project.importFiles(
+                [captionPath], false, targetBin, false
+            );
+            captionImportReported = 1;
+
+            // Poll for the imported item — Premiere may need time to register it
+            var pollAttempts = 0;
+            while (!captionItem && pollAttempts < 20) {
+                captionItem = _findProjectItemByPath(app.project.rootItem, captionPath, 0);
+                if (captionItem) { break; }
+                $.sleep(50);
+                pollAttempts++;
+            }
+            importSuccess = !!captionItem;
+        } else {
+            importSuccess = true;
+            _ocLog("Caption file already imported");
+        }
+    } catch (e) {
+        _ocLog("Import error: " + e.toString());
+        return JSON.stringify({ error: "Failed to import caption file: " + e.toString() });
+    }
+
+    if (!importSuccess && !captionItem) {
+        return JSON.stringify({ error: "Import failed. Your Premiere version may not support SRT import (requires v15+)." });
+    }
+
+    var placement = _ocPlaceCaptionItemInSequence(seq, captionItem);
+    var host = _ocHostVersionInfo();
+    var captionPresenceAfter = _ocProjectPathPresence([captionPath]);
+    var captionClipsAfter = _ocSequenceClipSnapshot(seq);
+    var captionTracksAfter = _ocCaptionTrackSnapshot(seq);
+    var captionTimelineAfter = (captionClipsAfter || []).concat(captionTracksAfter || []);
+    var verifiedCaptionFileImport = _ocNewProjectPathCount(captionPresenceBefore, captionPresenceAfter);
+    var reportedCaptionPlacement = placement.added_to_timeline ? 1 : 0;
+    var canVerifyCaptionTimeline = (captionClipsBefore !== null && captionClipsAfter !== null) ||
+        (captionTracksBefore !== null && captionTracksAfter !== null);
+    var verifiedCaptionTimeline = canVerifyCaptionTimeline && reportedCaptionPlacement &&
+        _ocFingerprintAddedCount(captionTimelineBefore, captionTimelineAfter) > 0 ? 1 : 0;
+    var reportedCaptionImportWrites = captionImportReported + reportedCaptionPlacement;
+    var verifiedCaptionImportWrites = verifiedCaptionFileImport + verifiedCaptionTimeline;
+    var captionImportStatus = _ocVerificationStatus(
+        reportedCaptionImportWrites,
+        verifiedCaptionImportWrites,
+        captionImportReported > 0 || canVerifyCaptionTimeline
+    );
+    if (reportedCaptionPlacement && !canVerifyCaptionTimeline && captionImportReported === 0) {
+        captionImportStatus = "unverified";
+    }
+
+    return JSON.stringify(_ocAttachHostWriteVerification({
+        success: captionImportStatus !== "failed",
+        imported: true,
+        addedToTimeline: placement.addedToTimeline,
+        added_to_timeline: placement.added_to_timeline,
+        placement_mode: placement.placement_mode,
+        bin_name: "OpenCut Captions",
+        caption_track_index: placement.caption_track_index,
+        video_track_index: placement.video_track_index,
+        fallback_path: placement.fallback_path,
+        sidecar_path: "",
+        warnings: placement.warnings,
+        warning: _ocWarningsToString(placement.warnings),
+        host_version: host.version,
+        host: host,
+        message: placement.message
+    }, _ocHostWriteVerification(
+        "importCaptions",
+        (captionPresenceBefore[0] ? 0 : 1) + (seq ? 1 : 0),
+        reportedCaptionImportWrites,
+        captionImportStatus === "unverified" ? null : verifiedCaptionImportWrites,
+        captionImportStatus,
+        canVerifyCaptionTimeline ? "rootItem media-path lookup plus caption/video track collection diff" : "rootItem media-path lookup; timeline placement read-back unavailable",
+        {
+            matching_paths: _ocPresenceCount(captionPresenceBefore),
+            timeline_item_count: captionTimelineBefore.length
+        },
+        {
+            matching_paths: _ocPresenceCount(captionPresenceAfter),
+            timeline_item_count: captionTimelineAfter.length
+        },
+        "The caption asset and any reported sequence placement are independently re-read after import."
+    )));
+}
+
+
+/**
+ * Find or create a bin (folder) in the project panel.
+ */
+function _findOrCreateBin(binName) {
+    try {
+        var root = app.project.rootItem;
+        // Search existing bins
+        for (var i = 0; i < root.children.numItems; i++) {
+            var item = root.children[i];
+            try {
+                if (item.type === 2 && item.name === binName) {
+                    return item;
+                }
+            } catch (e) {}
+        }
+        // Create new bin
+        return root.createBin(binName);
+    } catch (e) {
+        _ocLog("_findOrCreateBin error: " + e.toString());
+        return null;
+    }
+}
+
+
+/**
+ * Generic file import - imports any media file into the project.
+ * Used for denoised audio, normalized audio, stems, watermark-removed video, etc.
+ *
+ * @param {string} filePath  - Full path to the file to import
+ * @param {string} binName   - Optional bin name to organize imports (default: "OpenCut Output")
+ * @returns {string} JSON: {success, message, name} or {error}
+ */
+function importFileToProject(filePath, binName) {
+    _ocLog("importFileToProject: " + filePath + " -> bin: " + binName);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    if (!binName) binName = "OpenCut Output";
+
+    var f = new File(filePath);
+    if (!f.exists) {
+        return JSON.stringify({ error: "File not found: " + filePath });
+    }
+    var filePresenceBefore = _ocProjectPathPresence([filePath]);
+
+    // Check if already imported
+    var existing = _findProjectItemByPath(app.project.rootItem, filePath, 0);
+    if (existing) {
+        return JSON.stringify(_ocAttachProjectImportVerification({
+            success: true,
+            message: existing.name + " already in project.",
+            name: existing.name
+        }, "importFileToProject", [], [], 0, "No host write was attempted because the media path was already present."));
+    }
+
+    var targetBin = _findOrCreateBin(binName);
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    try {
+        app.project.importFiles([filePath], false, targetBin, false);
+    } catch (e) {
+        return JSON.stringify({ error: "Import failed: " + e.toString() });
+    }
+
+    // Poll for the imported item instead of fixed sleep
+    var imported = null;
+    for (var attempt = 0; attempt < 20; attempt++) {
+        $.sleep(50);
+        imported = _findProjectItemByPath(app.project.rootItem, filePath, 0);
+        if (imported) break;
+    }
+    var displayName = f.displayName || filePath.split(/[\/\\]/).pop();
+
+    if (imported) {
+        return JSON.stringify(_ocAttachProjectImportVerification({
+            success: true,
+            message: "Imported: " + imported.name,
+            name: imported.name
+        }, "importFileToProject", [filePath], filePresenceBefore, 1));
+    }
+
+    return JSON.stringify(_ocAttachProjectImportVerification({
+        success: true,
+        message: "Imported: " + displayName,
+        name: displayName
+    }, "importFileToProject", [filePath], filePresenceBefore, 1));
+}
+
+
+/**
+ * Import multiple files into the project in a single batch.
+ *
+ * @param {string} filePathsJson - JSON array of file paths
+ * @param {string} binName       - Bin name (default: "OpenCut Output")
+ * @returns {string} JSON: {success, message, imported, failed}
+ */
+function importFilesToProject(filePathsJson, binName) {
+    _ocLog("importFilesToProject: " + filePathsJson);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    if (!binName) binName = "OpenCut Output";
+
+    var paths = [];
+    try { paths = JSON.parse(filePathsJson); } catch (e) {
+        return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+    }
+
+    if (!paths || paths.length === 0) {
+        return JSON.stringify({ error: "No files to import" });
+    }
+
+    var validPaths = [];
+    var failed = [];
+    for (var i = 0; i < paths.length; i++) {
+        var f = new File(paths[i]);
+        if (f.exists) {
+            validPaths.push(paths[i]);
+        } else {
+            failed.push(paths[i]);
+        }
+    }
+
+    if (validPaths.length === 0) {
+        return JSON.stringify({ error: "No valid files found" });
+    }
+    var batchPresenceBefore = _ocProjectPathPresence(validPaths);
+
+    var targetBin = _findOrCreateBin(binName);
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    var itemsBefore = 0;
+    try { itemsBefore = targetBin.children.numItems; } catch (e) { /* ignore */ }
+
+    try {
+        app.project.importFiles(validPaths, false, targetBin, false);
+    } catch (e) {
+        return JSON.stringify({ error: "Batch import failed: " + e.toString() });
+    }
+
+    var itemsAfter = 0;
+    try { itemsAfter = targetBin.children.numItems; } catch (e) { /* ignore */ }
+    var actualImported = itemsAfter - itemsBefore;
+
+    return JSON.stringify(_ocAttachProjectImportVerification({
+        success: true,
+        message: "Imported " + actualImported + " of " + validPaths.length + " file(s) to " + binName,
+        imported: actualImported,
+        requested: validPaths.length,
+        failed: failed.length
+    }, "importFilesToProject", validPaths, batchPresenceBefore, validPaths.length));
+}
+
+/**
+ * Import and build a professional, fully customizable multi-track timeline in Premiere Pro.
+ * Places Video on Track V1, Main Audio on A1.
+ * Places Ducked Music on Track A2 (if provided).
+ * Places SFX Stem or individual SFX clips on Track A3.
+ * Places Captions on Subtitle / Caption track (if provided).
+ *
+ * @param {string} configJson - JSON configuration string
+ * @returns {string} JSON: {success, sequence, video, sfxCount} or {error}
+ */
+function importMultiTrackToTimeline(configJson) {
+    _ocLog("importMultiTrackToTimeline: " + configJson);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No Premiere Pro project open" });
+    }
+
+    var cfg = {};
+    try {
+        cfg = typeof configJson === "string" ? JSON.parse(configJson) : configJson;
+    } catch (e) {
+        return JSON.stringify({ error: "Invalid JSON config: " + e.toString() });
+    }
+
+    var videoPath = cfg.videoPath;
+    if (!videoPath) {
+        return JSON.stringify({ error: "Missing videoPath parameter" });
+    }
+
+    var cleanVideoPath = String(videoPath).replace(/\\/g, "/");
+    var vFile = new File(cleanVideoPath);
+    if (!vFile.exists) {
+        vFile = new File(videoPath);
+    }
+    if (!vFile.exists) {
+        return JSON.stringify({ error: "Video file not found on disk: " + videoPath });
+    }
+
+    var targetBin = _findOrCreateBin("OpenCut Outputs");
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    // 1. Locate or import video item
+    var videoItem = _findProjectItemByPath(app.project.rootItem, vFile.fsName, 0);
+    if (!videoItem) {
+        videoItem = _findProjectItemByPath(app.project.rootItem, cleanVideoPath, 0);
+    }
+    if (!videoItem) {
+        try {
+            app.project.importFiles([vFile.fsName], false, targetBin, false);
+            videoItem = _findProjectItemByPath(app.project.rootItem, vFile.fsName, 0);
+            if (!videoItem) {
+                videoItem = _findProjectItemByPath(app.project.rootItem, cleanVideoPath, 0);
+            }
+        } catch (e) {
+            _ocLog("importFiles error: " + e.toString());
+        }
+    }
+
+    // Fallback: search targetBin children by name
+    if (!videoItem && targetBin && targetBin.children) {
+        var baseName = vFile.name;
+        for (var b = 0; b < targetBin.children.numItems; b++) {
+            var cItem = targetBin.children[b];
+            if (cItem && cItem.name === baseName) {
+                videoItem = cItem;
+                break;
+            }
+        }
+    }
+
+    if (!videoItem) {
+        return JSON.stringify({ error: "Could not find imported video in project bin" });
+    }
+
+    // 2. Locate or create Sequence
+    var createNewSeq = cfg.createNewSequence !== false;
+    var seq = null;
+    var seqName = cfg.seqName || ("OpenCut - " + (videoItem.name ? videoItem.name.replace(/\.[^.]+$/, "") : "Reel"));
+
+    if (createNewSeq || !app.project.activeSequence) {
+        try {
+            if (typeof app.project.createNewSequenceFromClips === "function") {
+                app.project.createNewSequenceFromClips(seqName, [videoItem], targetBin);
+                seq = app.project.activeSequence;
+            }
+        } catch (e) {
+            _ocLog("createNewSequenceFromClips exception: " + e.toString());
+        }
+
+        if (!seq) {
+            try {
+                app.project.createNewSequence(seqName, "");
+                seq = app.project.activeSequence;
+                if (seq && seq.videoTracks && seq.videoTracks.numTracks > 0) {
+                    var zeroTime = new Time();
+                    seq.videoTracks[0].overwriteClip(videoItem, zeroTime);
+                }
+            } catch (e2) {
+                _ocLog("createNewSequence error: " + e2.toString());
+            }
+        }
+    } else {
+        seq = app.project.activeSequence;
+        try {
+            if (seq && seq.videoTracks && seq.videoTracks.numTracks > 0) {
+                var playhead = new Time();
+                try {
+                    if (seq.getPlayerPosition) playhead = seq.getPlayerPosition();
+                } catch (pe) {}
+                seq.videoTracks[0].overwriteClip(videoItem, playhead);
+            }
+        } catch (e3) {
+            _ocLog("overwriteClip on existing sequence error: " + e3.toString());
+        }
+    }
+
+    if (!seq) {
+        seq = app.project.activeSequence;
+    }
+
+    if (!seq) {
+        return JSON.stringify({ error: "No active sequence available in Premiere Pro" });
+    }
+
+    // 3. Import and place Background Music on Track A2 (if provided)
+    if (cfg.musicPath) {
+        var mFile = new File(cfg.musicPath);
+        if (mFile.exists) {
+            var musicItem = _findProjectItemByPath(app.project.rootItem, cfg.musicPath, 0);
+            if (!musicItem) {
+                try {
+                    app.project.importFiles([cfg.musicPath], false, targetBin, false);
+                    musicItem = _findProjectItemByPath(app.project.rootItem, cfg.musicPath, 0);
+                } catch (me) {}
+            }
+            if (musicItem && seq.audioTracks && seq.audioTracks.numTracks >= 2) {
+                try {
+                    var mTrack = seq.audioTracks[1]; // Track A2
+                    mTrack.overwriteClip(musicItem, new Time());
+                } catch (me2) {
+                    _ocLog("Music overwriteClip error: " + me2.toString());
+                }
+            }
+        }
+    }
+
+    // 4. Import and place Sound Effects on Track A3
+    var sfxPlaced = 0;
+    var targetSfxTrackIdx = 2; // Track A3
+    if (seq.audioTracks && seq.audioTracks.numTracks > 0) {
+        if (targetSfxTrackIdx >= seq.audioTracks.numTracks) {
+            targetSfxTrackIdx = seq.audioTracks.numTracks - 1;
+        }
+        var sfxTrack = seq.audioTracks[targetSfxTrackIdx];
+
+        // A. Individual SFX clips placement
+        if (cfg.sfxEvents && cfg.sfxEvents.length > 0 && cfg.placeIndividualSfx !== false) {
+            var sfxBin = _findOrCreateBin("OpenCut SFX");
+            if (!sfxBin) sfxBin = targetBin;
+
+            var uniqueSfxFiles = [];
+            for (var evIdx = 0; evIdx < cfg.sfxEvents.length; evIdx++) {
+                var fPath = cfg.sfxEvents[evIdx].file;
+                var found = false;
+                for (var uCheck = 0; uCheck < uniqueSfxFiles.length; uCheck++) {
+                    if (uniqueSfxFiles[uCheck] === fPath) { found = true; break; }
+                }
+                if (fPath && !found) {
+                    uniqueSfxFiles.push(fPath);
+                }
+            }
+
+            var sfxItemMap = {};
+            for (var u = 0; u < uniqueSfxFiles.length; u++) {
+                var sFile = new File(uniqueSfxFiles[u]);
+                if (sFile.exists) {
+                    var sItem = _findProjectItemByPath(app.project.rootItem, uniqueSfxFiles[u], 0);
+                    if (!sItem) {
+                        try {
+                            app.project.importFiles([uniqueSfxFiles[u]], false, sfxBin, false);
+                            sItem = _findProjectItemByPath(app.project.rootItem, uniqueSfxFiles[u], 0);
+                        } catch (se) {}
+                    }
+                    if (sItem) {
+                        sfxItemMap[uniqueSfxFiles[u]] = sItem;
+                    }
+                }
+            }
+
+            for (var i = 0; i < cfg.sfxEvents.length; i++) {
+                var ev = cfg.sfxEvents[i];
+                var evItem = sfxItemMap[ev.file];
+                if (evItem && sfxTrack) {
+                    try {
+                        var evTime = new Time();
+                        evTime.seconds = Number(ev.time);
+                        sfxTrack.overwriteClip(evItem, evTime);
+                        sfxPlaced++;
+                    } catch (pe) {
+                        _ocLog("SFX event overwriteClip error: " + pe.toString());
+                    }
+                }
+            }
+        }
+
+        // B. Synchronized SFX stem placement (if individual clips were not placed or if requested)
+        if (sfxPlaced === 0 && cfg.sfxStemPath) {
+            var stemFile = new File(cfg.sfxStemPath);
+            if (stemFile.exists) {
+                var stemItem = _findProjectItemByPath(app.project.rootItem, cfg.sfxStemPath, 0);
+                if (!stemItem) {
+                    try {
+                        app.project.importFiles([cfg.sfxStemPath], false, targetBin, false);
+                        stemItem = _findProjectItemByPath(app.project.rootItem, cfg.sfxStemPath, 0);
+                    } catch (steme) {}
+                }
+                if (stemItem && sfxTrack) {
+                    try {
+                        sfxTrack.overwriteClip(stemItem, new Time());
+                        sfxPlaced = 1;
+                    } catch (steme2) {
+                        _ocLog("Stem overwriteClip error: " + steme2.toString());
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Captions placement (if SRT provided)
+    if (cfg.srtPath) {
+        try {
+            if (typeof importCaptions === "function") {
+                importCaptions(cfg.srtPath);
+            }
+        } catch (capErr) {
+            _ocLog("Captions import error: " + capErr.toString());
+        }
+    }
+
+    return JSON.stringify({
+        success: true,
+        sequence: seq ? seq.name : "Sequence",
+        video: videoItem ? videoItem.name : "Video",
+        sfxCount: sfxPlaced,
+        message: "Multi-track timeline created with separate video, audio, and customizable SFX tracks!"
+    });
+}
+
+/**
+ * Inserts a specific in/out range of a video clip into the active sequence at the playhead or end of track.
+ *
+ * @param {string} configJson - JSON { filepath, inPoint, outPoint, title }
+ * @returns {string} JSON string with success/error status
+ */
+function insertClipRangeToSequence(configJson) {
+    _ocLog("insertClipRangeToSequence: " + configJson);
+
+    if (!app || !app.project) {
+        return JSON.stringify({ error: "No Premiere Pro project open" });
+    }
+
+    var cfg = {};
+    try {
+        cfg = typeof configJson === "string" ? JSON.parse(configJson) : configJson;
+    } catch (e) {
+        return JSON.stringify({ error: "Invalid JSON config: " + e.toString() });
+    }
+
+    var videoPath = cfg.filepath || cfg.videoPath;
+    if (!videoPath) {
+        return JSON.stringify({ error: "Missing filepath parameter" });
+    }
+
+    var inSec = parseFloat(cfg.inPoint) || 0;
+    var outSec = parseFloat(cfg.outPoint) || 0;
+    if (outSec <= inSec) {
+        return JSON.stringify({ error: "Invalid in/out range: " + inSec + " to " + outSec });
+    }
+
+    var cleanPath = String(videoPath).replace(/\\/g, "/");
+    var vFile = new File(cleanPath);
+    if (!vFile.exists) vFile = new File(videoPath);
+    if (!vFile.exists) {
+        return JSON.stringify({ error: "Video file not found on disk: " + videoPath });
+    }
+
+    var targetBin = _findOrCreateBin("Auto Reels");
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    // Locate or import project item
+    var projectItem = _findProjectItemByPath(app.project.rootItem, vFile.fsName, 0);
+    if (!projectItem) {
+        projectItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+    }
+    if (!projectItem) {
+        try {
+            app.project.importFiles([vFile.fsName], false, targetBin, false);
+            projectItem = _findProjectItemByPath(app.project.rootItem, vFile.fsName, 0);
+            if (!projectItem) {
+                projectItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+            }
+        } catch (e) {
+            _ocLog("importFiles error: " + e.toString());
+        }
+    }
+
+    if (!projectItem) {
+        return JSON.stringify({ error: "Could not import or find video item in project" });
+    }
+
+    var seq = app.project.activeSequence;
+    if (!seq) {
+        // Create sequence from clip if none exists
+        try {
+            app.project.createNewSequenceFromClips(cfg.title || "Auto Reel Sequence", [projectItem], targetBin);
+            seq = app.project.activeSequence;
+            return JSON.stringify({ success: true, message: "Created new sequence with clip range" });
+        } catch (seqErr) {
+            return JSON.stringify({ error: "No active sequence and failed to create new one: " + seqErr.toString() });
+        }
+    }
+
+    var videoTrack = seq.videoTracks && seq.videoTracks.numTracks > 0 ? seq.videoTracks[0] : null;
+    if (!videoTrack) {
+        return JSON.stringify({ error: "Sequence has no video tracks" });
+    }
+
+    try {
+        projectItem.setInPoint(inSec, 4);
+        projectItem.setOutPoint(outSec, 4);
+
+        // Insert at sequence playhead or end of track
+        var insertTime = seq.getPlayerPosition();
+        if (!insertTime) {
+            insertTime = new Time();
+            insertTime.seconds = 0;
+        }
+
+        try {
+            videoTrack.insertClip(projectItem, insertTime);
+        } catch (eIns) {
+            videoTrack.overwriteClip(projectItem, insertTime);
+        }
+
+        // Advance playhead by clip duration
+        var dur = outSec - inSec;
+        var newPos = new Time();
+        newPos.seconds = (insertTime.seconds || 0) + dur;
+        seq.setPlayerPosition(newPos.ticks);
+
+        // Reset in/out on master item
+        try {
+            projectItem.clearInPoint(4);
+            projectItem.clearOutPoint(4);
+        } catch (eClr) {}
+
+        return JSON.stringify({
+            success: true,
+            inPoint: inSec,
+            outPoint: outSec,
+            duration: dur,
+            title: cfg.title || "Viral Clip"
+        });
+    } catch (opErr) {
+        try {
+            projectItem.clearInPoint(4);
+            projectItem.clearOutPoint(4);
+        } catch (eClr2) {}
+        return JSON.stringify({ error: "Failed to insert clip range: " + opErr.toString() });
+    }
+}
+
+
+
+/**
+ * Import a styled caption overlay video (.mov with alpha) into the
+ * project panel so the user can drag it onto V2+ above their video.
+ *
+ * @param {string} overlayPath - Full path to the transparent .mov file
+ * @returns {string} JSON: {success, message} or {error}
+ */
+function importCaptionOverlay(overlayPath) {
+    _ocLog("importCaptionOverlay: " + overlayPath);
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    var overlayFile = new File(overlayPath);
+    if (!overlayFile.exists) {
+        return JSON.stringify({ error: "Overlay file not found: " + overlayPath });
+    }
+    var overlayPresenceBefore = _ocProjectPathPresence([overlayPath]);
+
+    // Check if already imported
+    try {
+        var overlayItem = _findProjectItemByPath(app.project.rootItem, overlayPath, 0);
+        if (overlayItem) {
+            return JSON.stringify(_ocAttachProjectImportVerification({
+                success: true,
+                message: "Caption overlay ready in project panel (OpenCut Overlays bin). Drag it onto V2 above your video.",
+                nodeId: overlayItem.nodeId || "",
+                path: overlayPath
+            }, "importCaptionOverlay", [], [], 0, "No host write was attempted because the overlay path was already present."));
+        }
+
+        // Import into an OpenCut Overlays bin
+        var overlayBin = _findOrCreateBin("OpenCut Overlays");
+        var targetBin = overlayBin || app.project.rootItem;
+        try {
+            app.project.importFiles([overlayPath], false, targetBin, false);
+        } catch (e) {
+            return JSON.stringify({ error: "Import failed: " + e.toString() });
+        }
+
+        // Poll for import to complete
+        for (var _poll = 0; _poll < 20; _poll++) {
+            $.sleep(50);
+            overlayItem = _findProjectItemByPath(app.project.rootItem, overlayPath, 0);
+            if (overlayItem) break;
+        }
+
+        if (overlayItem) {
+            return JSON.stringify(_ocAttachProjectImportVerification({
+                success: true,
+                message: "Caption overlay imported! Find it in the OpenCut Overlays bin and drag it onto V2 above your video.",
+                nodeId: overlayItem.nodeId || "",
+                path: overlayPath
+            }, "importCaptionOverlay", [overlayPath], overlayPresenceBefore, 1));
+        }
+
+        // If we can't find it by path, check the bin for the most recent item
+        if (overlayBin) {
+            try {
+                var numItems = overlayBin.children.numItems;
+                if (numItems > 0) {
+                    return JSON.stringify(_ocAttachProjectImportVerification({
+                        success: true,
+                        message: "Caption overlay imported to OpenCut Overlays bin. Drag it onto V2 above your video."
+                    }, "importCaptionOverlay", [overlayPath], overlayPresenceBefore, 1));
+                }
+            } catch (e2) {}
+        }
+
+        return JSON.stringify(_ocAttachProjectImportVerification({
+            error: "Import may have failed. Check the OpenCut Overlays bin, or try File > Import and select: " + overlayPath
+        }, "importCaptionOverlay", [overlayPath], overlayPresenceBefore, 1));
+    } catch (e) {
+        return JSON.stringify({ error: "importCaptionOverlay: " + e.toString() });
+    }
+}
+
+
+/**
+ * Attempt to start the OpenCut backend server from Premiere.
+ * Priority order:
+ *   1. Installed exe (from OpenCut installer) via registry path
+ *   2. Exe in known install location (%LOCALAPPDATA%\OpenCut\)
+ *   3. Fall back to python -m opencut.server (dev mode)
+ *
+ * Kills any existing server first via PID file + port kill.
+ *
+ * @returns {string} JSON: {success, message} or {error}
+ */
+function startOpenCutBackend() {
+    _ocLog("startOpenCutBackend called");
+
+    var isWindows = ($.os.indexOf("Windows") !== -1);
+
+    // --- Try to find the installed exe ---
+    var exePath = "";
+
+    if (isWindows) {
+        // Check registry for install path (set by installer)
+        try {
+            var wsh = new ActiveXObject("WScript.Shell");
+            var regPath = wsh.RegRead("HKCU\\Software\\OpenCut\\InstallPath");
+            if (regPath) {
+                // Custom installer puts exe in server\ subdir
+                var candidate = regPath + "\\server\\OpenCut-Server.exe";
+                if (new File(candidate).exists) {
+                    exePath = candidate;
+                    _ocLog("Found exe via registry: " + exePath);
+                }
+                // Fallback: exe in install root (legacy layout)
+                if (!exePath) {
+                    candidate = regPath + "\\OpenCut-Server.exe";
+                    if (new File(candidate).exists) {
+                        exePath = candidate;
+                        _ocLog("Found exe via registry (root): " + exePath);
+                    }
+                }
+            }
+        } catch (e) {
+            _ocLog("Registry lookup failed (normal if not installed): " + e.toString());
+        }
+
+        // Check default install location
+        if (!exePath) {
+            try {
+                var progFiles = $.getenv("ProgramFiles");
+                if (progFiles) {
+                    var candidate2 = progFiles + "\\OpenCut\\server\\OpenCut-Server.exe";
+                    if (new File(candidate2).exists) {
+                        exePath = candidate2;
+                        _ocLog("Found exe at Program Files: " + exePath);
+                    }
+                }
+            } catch (e2) {}
+        }
+
+        // Check workspace and standard root locations
+        if (!exePath) {
+            var rootCandidates = [
+                "E:\\autocut\\server\\OpenCut-Server.exe",
+                "C:\\autocut\\server\\OpenCut-Server.exe",
+                "D:\\autocut\\server\\OpenCut-Server.exe"
+            ];
+            for (var rci = 0; rci < rootCandidates.length; rci++) {
+                if (new File(rootCandidates[rci]).exists) {
+                    exePath = rootCandidates[rci];
+                    _ocLog("Found exe at root candidate: " + exePath);
+                    break;
+                }
+            }
+        }
+    }
+
+    var launched = false;
+
+    if (isWindows) {
+        // ---- WINDOWS ----
+        // Check for unified launcher VBS
+        var launcherVbs = "";
+        var vbsCandidates = [
+            "E:\\autocut\\OpenCut-Launcher.vbs",
+            "C:\\autocut\\OpenCut-Launcher.vbs",
+            (exePath ? (new File(exePath).parent.parent.fsName + "\\OpenCut-Launcher.vbs") : "")
+        ];
+        for (var vi = 0; vi < vbsCandidates.length; vi++) {
+            if (vbsCandidates[vi] && new File(vbsCandidates[vi]).exists) {
+                launcherVbs = vbsCandidates[vi];
+                break;
+            }
+        }
+
+        // Build a batch file that kills old server, then launches new
+        var bat = new File(Folder.temp.fsName + "/opencut_start.bat");
+        if (!bat.open("w")) {
+            return JSON.stringify({ error: "Cannot write startup script to temp folder" });
+        }
+        try {
+            bat.writeln("@echo off");
+            bat.writeln("setlocal");
+            // Kill via PID file
+            bat.writeln('set "PIDFILE=%USERPROFILE%\\.opencut\\server.pid"');
+            bat.writeln('if exist "%PIDFILE%" (');
+            bat.writeln('    set /p OLDPID=<"%PIDFILE%"');
+            bat.writeln('    if defined OLDPID (');
+            bat.writeln('        taskkill /F /T /PID %OLDPID% >nul 2>&1');
+            bat.writeln('    )');
+            bat.writeln('    del "%PIDFILE%" >nul 2>&1');
+            bat.writeln(')');
+            // Kill anything holding port 5679
+            bat.writeln('for /f "tokens=5" %%a in (\'netstat -ano -p TCP ^| findstr ":5679 " ^| findstr "LISTENING"\') do (');
+            bat.writeln('    taskkill /F /T /PID %%a >nul 2>&1');
+            bat.writeln(')');
+            // Kill anything holding port 5682
+            bat.writeln('for /f "tokens=5" %%b in (\'netstat -ano -p TCP ^| findstr ":5682 " ^| findstr "LISTENING"\') do (');
+            bat.writeln('    taskkill /F /T /PID %%b >nul 2>&1');
+            bat.writeln(')');
+            bat.writeln("timeout /t 1 /nobreak >nul 2>&1");
+
+            if (launcherVbs) {
+                // Unified silent launcher handles both Core Server (5679) & Sound Designer/Reels (5682)
+                bat.writeln('wscript.exe "' + launcherVbs + '"');
+            } else if (exePath) {
+                // Launch Sound Designer (5682) in background if Python available
+                bat.writeln('if exist "C:\\Python313\\python.exe" (');
+                bat.writeln('    if exist "E:\\autocut\\server\\sound_designer_service.py" (');
+                bat.writeln('        start /b "" "C:\\Python313\\python.exe" "E:\\autocut\\server\\sound_designer_service.py" >nul 2>&1');
+                bat.writeln('    )');
+                bat.writeln(')');
+                // Launch the installed exe (sanitize path against injection)
+                var safePath = exePath.replace(/[&|<>^%"]/g, "");
+                bat.writeln('"' + safePath + '"');
+            } else {
+                bat.writeln('if exist "C:\\Python313\\python.exe" (');
+                bat.writeln('    if exist "E:\\autocut\\server\\sound_designer_service.py" (');
+                bat.writeln('        start /b "" "C:\\Python313\\python.exe" "E:\\autocut\\server\\sound_designer_service.py" >nul 2>&1');
+                bat.writeln('    )');
+                bat.writeln(')');
+                // Fall back to python -m (dev mode)
+                var pythonCmds = ["python", "python3", "py"];
+                for (var i = 0; i < pythonCmds.length; i++) {
+                    bat.writeln(pythonCmds[i] + ' -m opencut.server 2>nul && goto :done');
+                }
+                bat.writeln(":done");
+            }
+        } finally {
+            bat.close();
+        }
+
+        try {
+            bat.execute();
+            launched = true;
+            _ocLog("Launched via bat" + (exePath ? " (exe)" : " (python fallback)"));
+        } catch (e3) {
+            _ocLog("Bat launch failed: " + e3.toString());
+        }
+    } else {
+        // ---- macOS / Linux ----
+        // Write the startup script
+        var shPath = Folder.temp.fsName + "/opencut_start.sh";
+        var sh = new File(shPath);
+        if (!sh.open("w")) {
+            return JSON.stringify({ error: "Cannot write startup script to temp folder" });
+        }
+        try {
+            sh.writeln("#!/bin/bash");
+            // Kill via PID file
+            sh.writeln('PIDFILE="$HOME/.opencut/server.pid"');
+            sh.writeln('if [ -f "$PIDFILE" ]; then');
+            sh.writeln('    OLDPID=$(head -1 "$PIDFILE" 2>/dev/null)');
+            sh.writeln('    [ -n "$OLDPID" ] && kill -9 "$OLDPID" 2>/dev/null');
+            sh.writeln('    rm -f "$PIDFILE"');
+            sh.writeln('fi');
+            // Kill anything on port 5679
+            sh.writeln('for PID in $(lsof -ti :5679 2>/dev/null); do kill -9 "$PID" 2>/dev/null; done');
+            sh.writeln("sleep 1");
+            // Launch
+            sh.writeln("nohup python3 -m opencut.server > /dev/null 2>&1 &");
+        } finally {
+            sh.close();
+        }
+
+        try {
+            // File.execute() on macOS opens .sh files in a text editor.
+            // Use system.callSystem (or app.system) to run bash directly.
+            var cmd = '/bin/bash -c \'chmod +x "' + shPath + '" && "' + shPath + '"\'';
+            if (typeof app.system === "function") {
+                app.system(cmd);
+                launched = true;
+            } else {
+                // Fallback: use a .command file which Terminal.app can run
+                var cmdFile = new File(Folder.temp.fsName + "/opencut_start.command");
+                if (!cmdFile.open("w")) {
+                    return JSON.stringify({ error: "Cannot write startup script to temp folder" });
+                }
+                try {
+                    cmdFile.writeln("#!/bin/bash");
+                    cmdFile.writeln('chmod +x "' + shPath + '" && "' + shPath + '"');
+                    cmdFile.writeln("exit 0");
+                } finally {
+                    cmdFile.close();
+                }
+                cmdFile.execute();
+                launched = true;
+            }
+            _ocLog("Launched via sh (python)");
+        } catch (e4) {
+            _ocLog("Sh launch failed: " + e4.toString());
+        }
+    }
+
+    if (launched) {
+        return JSON.stringify({ success: true, message: "Backend launch attempted" + (exePath ? " (installed)" : " (dev)") });
+    }
+    return JSON.stringify({ error: "Could not launch backend. Start manually: python -m opencut.server" });
+}
+
+
+/**
+ * Get Premiere Pro's current UI brightness for theme syncing.
+ * Returns JSON with brightness level (0-255 range).
+ *
+ * @returns {string} JSON: {brightness: number, isDark: boolean}
+ */
+function getPremiereThemeInfo() {
+    try {
+        // CSInterface handles this on the panel side, but for ExtendScript
+        // we can check the app display name / version for context
+        var info = {
+            appName: app.name || "Premiere Pro",
+            appVersion: app.version || "unknown",
+            projectName: "",
+            projectPath: ""
+        };
+        if (app.project) {
+            info.projectName = app.project.name || "";
+            info.projectPath = app.project.path || "";
+        }
+        return JSON.stringify(info);
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Auto-import any output file by detecting its type and placing it
+ * in the appropriate project bin. Universal import handler.
+ *
+ * @param {string} filePath  - Full path to the output file
+ * @param {string} jobType   - The type of job that produced this file (e.g., "denoise", "export-preset")
+ * @returns {string} JSON result
+ */
+function autoImportResult(filePath, jobType) {
+    _ocLog("autoImportResult: " + filePath + " (type: " + jobType + ")");
+
+    if (!app || !app.project || !app.project.rootItem) {
+        return JSON.stringify({ error: "No project open" });
+    }
+
+    if (!filePath) {
+        return JSON.stringify({ error: "No file path provided" });
+    }
+
+    var f = new File(filePath);
+    if (!f.exists) {
+        return JSON.stringify({ error: "File not found: " + filePath });
+    }
+    var autoImportPresenceBefore = _ocProjectPathPresence([filePath]);
+
+    // Determine the bin name based on job type
+    var binName = "OpenCut Output";
+    if (jobType) {
+        var t = jobType.toLowerCase();
+        if (t.indexOf("caption") !== -1 || t.indexOf("subtitle") !== -1 || t.indexOf("srt") !== -1) {
+            binName = "OpenCut Captions";
+        } else if (t.indexOf("audio") !== -1 || t.indexOf("denoise") !== -1 || t.indexOf("normalize") !== -1 || t.indexOf("stem") !== -1 || t.indexOf("tts") !== -1 || t.indexOf("sfx") !== -1 || t.indexOf("music") !== -1) {
+            binName = "OpenCut Audio";
+        } else if (t.indexOf("export") !== -1) {
+            binName = "OpenCut Exports";
+        } else if (t.indexOf("thumbnail") !== -1) {
+            binName = "OpenCut Thumbnails";
+        }
+    }
+
+    // Check if already imported
+    var existing = _findProjectItemByPath(app.project.rootItem, filePath, 0);
+    if (existing) {
+        return JSON.stringify(_ocAttachProjectImportVerification(
+            { success: true, message: "Already in project (" + binName + ")" },
+            "autoImportResult",
+            [],
+            [],
+            0,
+            "No host write was attempted because the output path was already present."
+        ));
+    }
+
+    var targetBin = _findOrCreateBin(binName);
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    try {
+        app.project.importFiles([filePath], false, targetBin, false);
+    } catch (e) {
+        return JSON.stringify({ error: "Import failed: " + e.toString() });
+    }
+
+    for (var autoImportPoll = 0; autoImportPoll < 20; autoImportPoll++) {
+        if (_findProjectItemByPath(app.project.rootItem, filePath, 0)) break;
+        $.sleep(50);
+    }
+
+    return JSON.stringify(_ocAttachProjectImportVerification({
+        success: true,
+        message: "Imported to " + binName
+    }, "autoImportResult", [filePath], autoImportPresenceBefore, 1));
+}
+
+
+/**
+ * Get rich information about the active sequence for deliverables generation.
+ * Returns JSON: {name, duration, fps, width, height, video_tracks, audio_tracks, markers}
+ */
+function ocGetSequenceInfo() {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        // Duration
+        var duration = 0;
+        try { duration = seq.end ? seq.end.seconds : 0; } catch (e) {}
+
+        // FPS
+        var fps = 24.0;
+        try {
+            var settings = seq.getSettings();
+            if (settings && settings.videoFrameRate && settings.videoFrameRate.seconds > 0) {
+                fps = 1.0 / settings.videoFrameRate.seconds;
+            }
+        } catch (e) { _ocLog("ocGetSequenceInfo fps error: " + e.toString()); }
+
+        // Dimensions
+        var width = 0;
+        var height = 0;
+        try { width = seq.frameSizeHorizontal || 0; } catch (e) {}
+        try { height = seq.frameSizeVertical || 0; } catch (e) {}
+
+        // Video tracks
+        var videoTracks = [];
+        try {
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt];
+                var vClips = [];
+                for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                    var vClip = vTrack.clips[vc];
+                    var vPath = "";
+                    try { vPath = _normalizeMediaPath(vClip.projectItem.getMediaPath()); } catch (e) {}
+                    var vStart = 0;
+                    var vEnd = 0;
+                    try { vStart = vClip.start ? vClip.start.seconds : 0; } catch (e) {}
+                    try { vEnd = vClip.end ? vClip.end.seconds : 0; } catch (e) {}
+
+                    // Effects / components
+                    var effects = [];
+                    try {
+                        if (vClip.components) {
+                            for (var ci = 0; ci < vClip.components.numItems; ci++) {
+                                try {
+                                    var comp = vClip.components[ci];
+                                    if (comp && comp.displayName) {
+                                        effects.push(comp.displayName);
+                                    }
+                                } catch (ce) {}
+                            }
+                        }
+                    } catch (e) {}
+
+                    vClips.push({
+                        name: vClip.name || "",
+                        path: vPath,
+                        start: vStart,
+                        end: vEnd,
+                        effects: effects
+                    });
+                }
+                videoTracks.push({ index: vt, clips: vClips });
+            }
+        } catch (e) { _ocLog("ocGetSequenceInfo videoTracks error: " + e.toString()); }
+
+        // Audio tracks
+        var audioTracks = [];
+        try {
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at];
+                var aClips = [];
+                for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                    var aClip = aTrack.clips[ac];
+                    var aPath = "";
+                    try { aPath = _normalizeMediaPath(aClip.projectItem.getMediaPath()); } catch (e) {}
+                    var aStart = 0;
+                    var aEnd = 0;
+                    try { aStart = aClip.start ? aClip.start.seconds : 0; } catch (e) {}
+                    try { aEnd = aClip.end ? aClip.end.seconds : 0; } catch (e) {}
+                    aClips.push({
+                        name: aClip.name || "",
+                        path: aPath,
+                        start: aStart,
+                        end: aEnd
+                    });
+                }
+                audioTracks.push({ index: at, clips: aClips });
+            }
+        } catch (e) { _ocLog("ocGetSequenceInfo audioTracks error: " + e.toString()); }
+
+        // Markers — use getFirstMarker/getNextMarker iterator (indexed access is unreliable)
+        var markers = [];
+        try {
+            var seqMarkers = seq.markers;
+            if (seqMarkers && seqMarkers.numMarkers > 0) {
+                var m = seqMarkers.getFirstMarker();
+                while (m) {
+                    try {
+                        var mTime = 0;
+                        try { mTime = m.time ? m.time.seconds : 0; } catch (e) {}
+                        var mName = "";
+                        try { mName = m.name || m.comments || ""; } catch (e) {}
+                        var mType = "";
+                        try { mType = m.type || ""; } catch (e) {}
+                        var mColor = 0;
+                        try { mColor = m.colorByteArray ? m.colorByteArray[0] : 0; } catch (e) {}
+                        markers.push({
+                            time: mTime,
+                            name: mName,
+                            type: mType,
+                            color: mColor
+                        });
+                    } catch (e) {}
+                    try { m = seqMarkers.getNextMarker(m); } catch (e) { m = null; }
+                }
+            }
+        } catch (e) { _ocLog("ocGetSequenceInfo markers error: " + e.toString()); }
+
+        return JSON.stringify({
+            name: seq.name || "",
+            duration: duration,
+            fps: fps,
+            width: width,
+            height: height,
+            video_tracks: videoTracks,
+            audio_tracks: audioTracks,
+            markers: markers
+        });
+    } catch (e) {
+        _ocLog("ocGetSequenceInfo error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Add markers to the active sequence from a JSON string array.
+ * markersJSON: '[{"time": 30.5, "name": "Chapter 1", "color": 0, "type": "comment", "duration": 0}]'
+ * Returns: '{"added": N, "errors": [...]}'
+ */
+function ocAddSequenceMarkers(markersJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        var items = [];
+        try {
+            items = JSON.parse(markersJSON);
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+
+        var added = 0;
+        var errors = [];
+        var beforeMarkers = _ocSequenceMarkerSnapshot(seq);
+
+        var seqDuration = 0;
+        try { seqDuration = seq.end ? Number(seq.end.seconds) : 0; } catch (e) {}
+
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            try {
+                var markerTime = Number(item.time) || 0;
+                if (markerTime < 0) markerTime = 0;
+                if (seqDuration > 0 && markerTime > seqDuration) {
+                    errors.push("Marker " + i + " time " + markerTime + "s exceeds sequence duration " + seqDuration + "s");
+                    continue;
+                }
+                var marker = seq.markers.createMarker(markerTime);
+
+                try { marker.name = item.name || ""; } catch (e) {}
+
+                // Type: 0 = comment, 1 = chapter, 2 = segmentation
+                try {
+                    var typeStr = (item.type || "comment").toLowerCase();
+                    if (typeStr === "chapter") {
+                        marker.type = 1;
+                    } else if (typeStr === "segmentation") {
+                        marker.type = 2;
+                    } else {
+                        marker.type = 0;
+                    }
+                } catch (e) {}
+
+                // Color — API varies by version, wrap tightly
+                try {
+                    var colorVal = item.color || 0;
+                    marker.colorByteArray = [colorVal, colorVal, colorVal, 255];
+                } catch (e) {}
+
+                added++;
+            } catch (e) {
+                errors.push("Marker " + i + ": " + e.toString());
+                _ocLog("ocAddSequenceMarkers item " + i + " error: " + e.toString());
+            }
+        }
+
+        var afterMarkers = _ocSequenceMarkerSnapshot(seq);
+        var canVerifyMarkers = beforeMarkers !== null && afterMarkers !== null;
+        var verifiedAdded = canVerifyMarkers ? _ocFingerprintAddedCount(beforeMarkers, afterMarkers) : null;
+        var addStatus = _ocVerificationStatus(added, verifiedAdded, canVerifyMarkers);
+        var addResult = _ocAttachHostWriteVerification(
+            { success: addStatus !== "failed", added: added, errors: errors },
+            _ocHostWriteVerification(
+                "ocAddSequenceMarkers",
+                items.length,
+                added,
+                verifiedAdded,
+                addStatus,
+                canVerifyMarkers ? "Sequence.markers iterator fingerprint diff" : "unavailable: Sequence.markers iterator",
+                { marker_count: beforeMarkers === null ? null : beforeMarkers.length },
+                { marker_count: afterMarkers === null ? null : afterMarkers.length },
+                canVerifyMarkers ? "Markers are created through createMarker() and verified through getFirstMarker()/getNextMarker()." : "This host does not expose an independently readable marker iterator."
+            )
+        );
+        return JSON.stringify(addResult);
+    } catch (e) {
+        _ocLog("ocAddSequenceMarkers error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Get all markers on the active sequence.
+ * Returns: '[{"time": 30.5, "name": "Chapter 1", "type": "comment", "duration": 0, "color": 0}]'
+ */
+function ocGetSequenceMarkers() {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        var result = [];
+        var seqMarkers = seq.markers;
+        if (!seqMarkers) {
+            return JSON.stringify(result);
+        }
+
+        var numM = 0;
+        try { numM = seqMarkers.numMarkers; } catch (e) {}
+
+        if (numM > 0) {
+            var m = null;
+            try { m = seqMarkers.getFirstMarker(); } catch (e) {}
+            while (m) {
+                try {
+                    var mTime = 0;
+                    try { mTime = m.time ? m.time.seconds : 0; } catch (e) {}
+                    var mName = "";
+                    try { mName = m.name || m.comments || ""; } catch (e) {}
+                    var mType = "";
+                    try { mType = m.type !== undefined ? String(m.type) : ""; } catch (e) {}
+                    var mDuration = 0;
+                    try { mDuration = m.duration ? m.duration.seconds : 0; } catch (e) {}
+                    var mColor = 0;
+                    try { mColor = m.colorByteArray ? m.colorByteArray[0] : 0; } catch (e) {}
+
+                    result.push({
+                        time: mTime,
+                        name: mName,
+                        type: mType,
+                        duration: mDuration,
+                        color: mColor
+                    });
+                } catch (e) {
+                    _ocLog("ocGetSequenceMarkers item error: " + e.toString());
+                }
+                try { m = seqMarkers.getNextMarker(m); } catch (e) { m = null; }
+            }
+        }
+
+        return JSON.stringify(result);
+    } catch (e) {
+        _ocLog("ocGetSequenceMarkers error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Delete regions from the active sequence timeline (ripple delete).
+ * Removes clips FULLY contained within each cut range.
+ * cutsJSON: '[{"start": 10.5, "end": 12.3}, ...]'
+ * Returns: '{"applied": N, "errors": [...]}'
+ */
+/**
+ * Close all empty gaps on the sequence timeline, packing clips tightly end-to-end.
+ * Shifts both video and linked audio synchronously.
+ */
+function _ocCloseAllSequenceGaps(seq) {
+    if (!seq || !seq.videoTracks || seq.videoTracks.numTracks === 0) return 0;
+    var vTrk = seq.videoTracks[0];
+    if (!vTrk.clips || vTrk.clips.numItems === 0) return 0;
+
+    // Phase 0: Clean up any orphan micro-clips (duration < 0.02s) on audio tracks
+    if (seq.audioTracks) {
+        for (var atIdx = 0; atIdx < seq.audioTracks.numTracks; atIdx++) {
+            var aTrack = seq.audioTracks[atIdx];
+            if (!aTrack || !aTrack.clips) continue;
+            for (var aci = aTrack.clips.numItems - 1; aci >= 0; aci--) {
+                try {
+                    var aClip = aTrack.clips[aci];
+                    if (aClip && aClip.start && aClip.end) {
+                        var aDur = Number(aClip.end.seconds) - Number(aClip.start.seconds);
+                        if (aDur < 0.02) {
+                            aClip.remove(false, false);
+                        }
+                    }
+                } catch (ePrune) {}
+            }
+        }
+    }
+
+    // Phase 1: Re-align all linked audio clips with their video clip boundaries
+    for (var vi = 0; vi < vTrk.clips.numItems; vi++) {
+        var vc = vTrk.clips[vi];
+        if (!vc || !vc.start || !vc.end) continue;
+        var vStart = vc.start.seconds;
+        var vEnd = vc.end.seconds;
+        var vDur = vEnd - vStart;
+        var vIn = (vc.inPoint && vc.inPoint.seconds !== undefined) ? vc.inPoint.seconds : 0;
+
+        var linked = vc.getLinkedItems ? vc.getLinkedItems() : null;
+        if (linked && linked.numItems > 0) {
+            for (var li = 0; li < linked.numItems; li++) {
+                var it = linked[li];
+                if (it && it.mediaType === "Audio") {
+                    try {
+                        var tStart = new Time();
+                        tStart.seconds = vStart;
+                        it.start = tStart;
+
+                        var tIn = new Time();
+                        tIn.seconds = vIn;
+                        it.inPoint = tIn;
+
+                        var tOut = new Time();
+                        tOut.seconds = vIn + vDur;
+                        it.outPoint = tOut;
+
+                        var tEnd = new Time();
+                        tEnd.seconds = vStart + vDur;
+                        it.end = tEnd;
+                    } catch (eSync) {}
+                }
+            }
+        }
+    }
+
+    // Phase 2: Collect all video clips and sort chronologically by start time
+    var clipList = [];
+    for (var ci = 0; ci < vTrk.clips.numItems; ci++) {
+        var c = vTrk.clips[ci];
+        if (c) clipList.push(c);
+    }
+    clipList.sort(function(a, b) {
+        var sA = (a.start && a.start.seconds !== undefined) ? Number(a.start.seconds) : 0;
+        var sB = (b.start && b.start.seconds !== undefined) ? Number(b.start.seconds) : 0;
+        return sA - sB;
+    });
+
+    var closedCount = 0;
+
+    // Helper to synchronously shift a video clip and its linked audio
+    function _shiftClipWithAudio(vClip, delta) {
+        if (!vClip) return;
+        try {
+            if (typeof vClip.move === "function") {
+                vClip.move(delta);
+            }
+        } catch (eMv) {}
+        try {
+            var lItems = vClip.getLinkedItems ? vClip.getLinkedItems() : null;
+            if (lItems && lItems.numItems > 0) {
+                for (var li = 0; li < lItems.numItems; li++) {
+                    var lIt = lItems[li];
+                    if (lIt && lIt.mediaType === "Audio" && typeof lIt.move === "function") {
+                        try { lIt.move(delta); } catch (eMa) {}
+                    }
+                }
+            }
+        } catch (eLkM) {}
+    }
+
+    // Check if there is an empty gap at the beginning (before first clip)
+    if (clipList.length > 0) {
+        var firstStart = Number(clipList[0].start.seconds);
+        if (firstStart > 0.01) {
+            var startShift = new Time();
+            startShift.seconds = -firstStart;
+            for (var fsi = 0; fsi < clipList.length; fsi++) {
+                _shiftClipWithAudio(clipList[fsi], startShift);
+            }
+            closedCount++;
+        }
+    }
+
+    // Close gaps between consecutive clips
+    for (var i = 1; i < clipList.length; i++) {
+        var prev = clipList[i - 1];
+        var cur = clipList[i];
+        if (!prev || !cur || !prev.end || !cur.start) continue;
+
+        var prevEnd = Number(prev.end.seconds);
+        var curStart = Number(cur.start.seconds);
+        var gap = curStart - prevEnd;
+
+        // If there is an empty gap (> 0.005s) between prev and cur
+        if (gap > 0.005) {
+            var shiftDelta = new Time();
+            shiftDelta.seconds = -gap;
+            for (var k = i; k < clipList.length; k++) {
+                _shiftClipWithAudio(clipList[k], shiftDelta);
+            }
+            closedCount++;
+        }
+    }
+
+    // Phase 3: Final pass to lock audio in 100% exact alignment with video
+    var aTrk0 = (seq.audioTracks && seq.audioTracks.numTracks > 0) ? seq.audioTracks[0] : null;
+
+    for (var vj = 0; vj < vTrk.clips.numItems; vj++) {
+        var vFin = vTrk.clips[vj];
+        if (!vFin || !vFin.start || !vFin.end) continue;
+        var vfStart = vFin.start.seconds;
+        var vfDur = vFin.end.seconds - vfStart;
+        var vfIn = (vFin.inPoint && vFin.inPoint.seconds !== undefined) ? vFin.inPoint.seconds : 0;
+
+        var matchedAudioClips = [];
+
+        var lk = vFin.getLinkedItems ? vFin.getLinkedItems() : null;
+        if (lk && lk.numItems > 0) {
+            for (var lj = 0; lj < lk.numItems; lj++) {
+                var aItem = lk[lj];
+                if (aItem && aItem.mediaType === "Audio") {
+                    matchedAudioClips.push(aItem);
+                }
+            }
+        }
+
+        // If no linked items found, check if aTrk0 has corresponding clip at index vj
+        if (matchedAudioClips.length === 0 && aTrk0 && aTrk0.clips && aTrk0.clips.numItems > vj) {
+            var candidateA = aTrk0.clips[vj];
+            if (candidateA && candidateA.mediaType === "Audio") {
+                matchedAudioClips.push(candidateA);
+            }
+        }
+
+        for (var mai = 0; mai < matchedAudioClips.length; mai++) {
+            var aTarget = matchedAudioClips[mai];
+            try {
+                var tfStart = new Time();
+                tfStart.seconds = vfStart;
+                aTarget.start = tfStart;
+
+                var tfIn = new Time();
+                tfIn.seconds = vfIn;
+                aTarget.inPoint = tfIn;
+
+                var tfOut = new Time();
+                tfOut.seconds = vfIn + vfDur;
+                aTarget.outPoint = tfOut;
+
+                var tfEnd = new Time();
+                tfEnd.seconds = vfStart + vfDur;
+                aTarget.end = tfEnd;
+            } catch (eFinSync) {}
+        }
+    }
+
+    return closedCount;
+}
+
+/**
+ * Public function to close all blank gaps on active sequence timeline.
+ * @returns {string} JSON result
+ */
+function ocCloseAllTimelineGaps() {
+    try {
+        if (!app || !app.project || !app.project.activeSequence) {
+            return JSON.stringify({ error: "No active sequence found." });
+        }
+        var count = _ocCloseAllSequenceGaps(app.project.activeSequence);
+        return JSON.stringify({ success: true, gapsClosed: count });
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// NOTE: Premiere Pro ExtendScript does not support undo groups (unlike After Effects).
+// Each clip.remove() creates a separate undo step. This is a Premiere limitation.
+// When UXP API supports undo groups, this should be wrapped in one.
+function ocApplySequenceCuts(cutsJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        var cuts = [];
+        var cutMode = "delete";
+        try {
+            var parsedPayload = cutsJSON;
+            if (typeof parsedPayload === "string") {
+                try { parsedPayload = JSON.parse(parsedPayload); } catch (eParse1) {}
+            }
+            if (typeof parsedPayload === "string") {
+                try { parsedPayload = JSON.parse(parsedPayload); } catch (eParse2) {}
+            }
+            // Support both direct array format and object format { cuts: [...], mode: "delete" | "disable" }
+            if (parsedPayload && parsedPayload.length === undefined && parsedPayload.cuts) {
+                cuts = parsedPayload.cuts;
+                if (parsedPayload.mode) cutMode = String(parsedPayload.mode).toLowerCase();
+            } else if (parsedPayload && parsedPayload.length !== undefined) {
+                cuts = parsedPayload;
+            }
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+        var disableOnly = cutMode === "disable";
+
+        if (!cuts || !cuts.length || typeof cuts.sort !== "function") {
+            return JSON.stringify({ success: true, applied: 0, errors: [] });
+        }
+
+        // Coerce cut times to numbers before sorting so NaN doesn't corrupt sort order
+        for (var si = 0; si < cuts.length; si++) {
+            cuts[si].start = Number(cuts[si].start) || 0;
+            cuts[si].end = Number(cuts[si].end) || 0;
+        }
+        // Sort cuts in reverse order so earlier ripple deletes don't shift later timecodes
+        cuts.sort(function (a, b) { return b.start - a.start; });
+
+        var applied = 0;
+        var attemptedRemovals = 0;
+        var errors = [];
+        var refusals = [];
+        var trimCount = 0;
+        var expectedTrims = [];
+        var expectedRemovals = [];
+        var beforeClips = _ocSequenceClipSnapshot(seq);
+        var kindNames = ["video", "audio"];
+
+        // High-precision timeline ripple extraction via Premiere Pro QE DOM
+        var qeRippleDone = false;
+        if (!disableOnly) {
+            try {
+                // Target all video and audio tracks with clips so ripple extraction remains perfectly in sync
+                for (var vti = 0; vti < seq.videoTracks.numTracks; vti++) {
+                    var vtrk = seq.videoTracks[vti];
+                    if (vtrk && vtrk.clips && vtrk.clips.numItems > 0 && typeof vtrk.setTargeted === "function") {
+                        try { vtrk.setTargeted(true, true); } catch (eTarV) {}
+                    }
+                }
+                for (var ati = 0; ati < seq.audioTracks.numTracks; ati++) {
+                    var atrk = seq.audioTracks[ati];
+                    if (atrk && atrk.clips && atrk.clips.numItems > 0 && typeof atrk.setTargeted === "function") {
+                        try { atrk.setTargeted(true, true); } catch (eTarA) {}
+                    }
+                }
+
+                app.enableQE();
+                if (typeof qe !== "undefined" && qe.project) {
+                    var qSeq = qe.project.getActiveSequence();
+                    if (qSeq && typeof qSeq.extract === "function") {
+                        for (var ci = 0; ci < cuts.length; ci++) {
+                            var cut = cuts[ci];
+                            var cutStart = Number(cut.start);
+                            var cutEnd = Number(cut.end);
+                            if (isNaN(cutStart) || isNaN(cutEnd) || cutStart >= cutEnd - 0.01) continue;
+
+                            try {
+                                seq.setInPoint(cutStart);
+                                seq.setOutPoint(cutEnd);
+                                var extRes = qSeq.extract();
+                                if (extRes !== false) {
+                                    applied++;
+                                }
+                            } catch (eCut) {
+                                errors.push("Cut " + ci + " [" + cutStart + "-" + cutEnd + "]: " + eCut.toString());
+                            }
+                        }
+                        try {
+                            seq.setInPoint(-400000);
+                            seq.setOutPoint(-400000);
+                        } catch (eReset) {}
+                        qeRippleDone = true;
+                    }
+                }
+            } catch (eQe) {
+                _ocLog("QE extract ripple error: " + eQe.toString());
+            }
+        }
+
+        // Ensure all blank gaps are packed tightly end-to-end with zero gaps
+        var closedGaps = 0;
+        if (!disableOnly) {
+            try { closedGaps = _ocCloseAllSequenceGaps(seq); } catch (eGap) {}
+        }
+
+        if (qeRippleDone && applied > 0) {
+            return JSON.stringify({
+                success: true,
+                applied: applied,
+                gapsClosed: closedGaps,
+                errors: errors,
+                method: "qe_extract_ripple"
+            });
+        }
+
+        for (var ci = 0; ci < cuts.length; ci++) {
+            var cut = cuts[ci];
+            var cutStart = Number(cut.start);
+            var cutEnd = Number(cut.end);
+
+            // Validate numeric cut range before deleting anything
+            if (isNaN(cutStart) || isNaN(cutEnd) || cutStart >= cutEnd) continue;
+
+            var trackCollections = [seq.videoTracks, seq.audioTracks];
+            for (var kindIndex = 0; kindIndex < trackCollections.length; kindIndex++) {
+                var tracks = trackCollections[kindIndex];
+                var kindName = kindNames[kindIndex];
+                for (var ti = 0; ti < tracks.numTracks; ti++) {
+                    var track = tracks[ti];
+                    // Walk backwards so removing an item doesn't shift the index
+                    for (var clipIndex = track.clips.numItems - 1; clipIndex >= 0; clipIndex--) {
+                        try {
+                            var clip = track.clips[clipIndex];
+                            if (!clip) continue;
+                            var plan = _ocPlanClipCut(clip, cutStart, cutEnd);
+                            if (plan.action === "none") continue;
+                            if (plan.action === "blocked") {
+                                _ocPushOnce(refusals, plan.reason);
+                                continue;
+                            }
+                            var identity = _ocClipIdentity(kindName, ti, clip);
+                            if (plan.action === "remove") {
+                                attemptedRemovals++;
+                                if (disableOnly) {
+                                    clip.disabled = true;
+                                } else {
+                                    clip.remove(false, true);
+                                    expectedRemovals.push(identity);
+                                }
+                                applied++;
+                                continue;
+                            }
+                            // A boundary-crossing clip can only be kept whole or
+                            // trimmed, and trimming destroys the very media
+                            // disable mode exists to preserve.
+                            if (disableOnly) {
+                                _ocPushOnce(refusals, "clip crosses a cut boundary; disabling it whole would mute media outside the range");
+                                continue;
+                            }
+                            if (_ocApplyClipTrim(clip, plan)) {
+                                trimCount++;
+                                applied++;
+                                expectedTrims.push({ id: identity, start: plan.start, end: plan.end });
+                            } else {
+                                _ocPushOnce(refusals, "clip boundary setters were refused by this host");
+                            }
+                        } catch (e) {
+                            errors.push(kindName + " track " + ti + " clip " + clipIndex + ": " + e.toString());
+                            _ocLog("ocApplySequenceCuts " + kindName + " error: " + e.toString());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Every cut said exactly where its clips should end up, so the read-back
+        // asserts that rather than settling for "something changed".
+        var planMismatches = _ocVerifyCutPlans(expectedTrims, expectedRemovals, _ocClipBoundsById(seq));
+        for (var mi = 0; mi < planMismatches.length; mi++) errors.push(planMismatches[mi]);
+
+        var afterClips = _ocSequenceClipSnapshot(seq);
+        var canVerifyClips = beforeClips !== null && afterClips !== null;
+        var verifiedRemoved = canVerifyClips ? _ocFingerprintDeltaCount(beforeClips, afterClips) : null;
+        // A trim leaves the clip in place with different boundaries, so it also
+        // shows up as a changed fingerprint; both count as an observed write.
+        var cutStatus = planMismatches.length
+            ? "failed"
+            : _ocVerificationStatus(applied, verifiedRemoved, canVerifyClips);
+        var cutResult = _ocAttachHostWriteVerification(
+            { success: cutStatus !== "failed", applied: applied, errors: errors },
+            _ocHostWriteVerification(
+                "ocApplySequenceCuts",
+                attemptedRemovals + trimCount,
+                applied,
+                verifiedRemoved,
+                cutStatus,
+                canVerifyClips ? "videoTracks/audioTracks clip boundary and disabled-state fingerprint diff, plus a check of every removed and trimmed clip against the boundaries its plan predicted" : "unavailable: video/audio track collection traversal",
+                { clip_count: beforeClips === null ? null : beforeClips.length },
+                {
+                    clip_count: afterClips === null ? null : afterClips.length,
+                    mode: disableOnly ? "disable" : "delete",
+                    removed: attemptedRemovals,
+                    trimmed: trimCount,
+                    refusals: refusals
+                },
+                canVerifyClips ? "Clips the range covers are removed and clips crossing one edge are trimmed back to it with their source point corrected, so the cut range ends up empty and nothing moves. A clip enclosing the whole range needs a razor ExtendScript does not offer and is refused. Every removal and trim is then checked against the boundaries its plan predicted, which is what tells a trim apart from a move; disabling leaves the clip count unchanged, so the disabled flag is part of the fingerprint." : "This host does not expose independently readable track collections."
+            )
+        );
+        if (!disableOnly) {
+            try { _ocCloseAllSequenceGaps(seq); } catch (eG) {}
+        }
+        return JSON.stringify(cutResult);
+    } catch (e) {
+        _ocLog("ocApplySequenceCuts error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Apply scale and position keyframes to a clip on a video track.
+ * trackIndex: int (0-based video track index)
+ * clipStartTime: float (clip's start time in seconds, used to identify the clip)
+ * keyframesJSON: '[{"time": 0.0, "scale": 100, "x": 0, "y": 0}, ...]'
+ * Returns: '{"success": true}' or '{"error": "..."}'
+ */
+function ocApplyClipKeyframes(trackIndex, clipStartTime, keyframesJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        var keyframes = [];
+        try {
+            keyframes = JSON.parse(keyframesJSON);
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+
+        trackIndex = Number(trackIndex) || 0;
+        clipStartTime = Number(clipStartTime);
+        if (isNaN(clipStartTime)) {
+            return JSON.stringify({ error: "Invalid clipStartTime" });
+        }
+
+        var vTrack = seq.videoTracks[trackIndex];
+        if (!vTrack) {
+            return JSON.stringify({ error: "Video track " + trackIndex + " not found" });
+        }
+
+        // Find the clip whose start time is within 0.1s of clipStartTime
+        var targetClip = null;
+        for (var ci = 0; ci < vTrack.clips.numItems; ci++) {
+            try {
+                var c = vTrack.clips[ci];
+                var cs = (c.start && c.start.seconds !== undefined) ? Number(c.start.seconds) : NaN;
+                if (!isNaN(cs) && Math.abs(cs - clipStartTime) < 0.1) {
+                    targetClip = c;
+                    break;
+                }
+            } catch (e) {}
+        }
+
+        if (!targetClip) {
+            return JSON.stringify({ error: "Clip not found at time " + clipStartTime + " on track " + trackIndex });
+        }
+
+        // Find the Motion component
+        var motionComponent = null;
+        try {
+            if (targetClip.components) {
+                for (var compIdx = 0; compIdx < targetClip.components.numItems; compIdx++) {
+                    try {
+                        var comp = targetClip.components[compIdx];
+                        if (comp && (comp.displayName === "Motion" || comp.matchName === "AE.ADBE Motion")) {
+                            motionComponent = comp;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+                // Fallback: index 0 is typically Motion
+                if (!motionComponent && targetClip.components.numItems > 0) {
+                    motionComponent = targetClip.components[0];
+                }
+            }
+        } catch (e) {
+            return JSON.stringify({ error: "Cannot access clip components: " + e.toString() });
+        }
+
+        if (!motionComponent) {
+            return JSON.stringify({ error: "Motion component not found on clip" });
+        }
+
+        // Find Scale and Position properties
+        var scaleProp = null;
+        var posProp = null;
+        try {
+            if (motionComponent.properties) {
+                for (var pi = 0; pi < motionComponent.properties.numItems; pi++) {
+                    try {
+                        var prop = motionComponent.properties[pi];
+                        if (!prop) continue;
+                        var pName = prop.displayName || "";
+                        if (pName === "Scale" || pName === "Uniform Scale") {
+                            scaleProp = prop;
+                        } else if (pName === "Position") {
+                            posProp = prop;
+                        }
+                    } catch (e) {}
+                }
+            }
+        } catch (e) {
+            return JSON.stringify({ error: "Cannot access motion properties: " + e.toString() });
+        }
+
+        var scaleKeysBefore = _ocPropertyKeySnapshot(scaleProp);
+        var positionKeysBefore = _ocPropertyKeySnapshot(posProp);
+        var scaleValuesBefore = [];
+        var positionValuesBefore = [];
+        for (var beforeKeyIndex = 0; beforeKeyIndex < keyframes.length; beforeKeyIndex++) {
+            var beforeKeyTime = Number(keyframes[beforeKeyIndex].time) || 0;
+            scaleValuesBefore.push(_ocPropertyValueAtTime(scaleProp, beforeKeyTime));
+            positionValuesBefore.push(_ocPropertyValueAtTime(posProp, beforeKeyTime));
+        }
+        var attemptedWrites = keyframes.length * ((scaleProp ? 1 : 0) + (posProp ? 1 : 0));
+        var reportedWrites = 0;
+
+        // Apply keyframes
+        for (var ki = 0; ki < keyframes.length; ki++) {
+            var kf = keyframes[ki];
+            var kfTime = Number(kf.time) || 0;
+
+            if (scaleProp) {
+                try {
+                    scaleProp.addKey(kfTime);
+                    scaleProp.setValueAtKey(kfTime, kf.scale !== undefined ? kf.scale : 100);
+                    reportedWrites++;
+                } catch (e) {
+                    _ocLog("ocApplyClipKeyframes scale key error: " + e.toString());
+                }
+            }
+
+            if (posProp) {
+                try {
+                    posProp.addKey(kfTime);
+                    posProp.setValueAtKey(kfTime, [kf.x || 0, kf.y || 0]);
+                    reportedWrites++;
+                } catch (e) {
+                    _ocLog("ocApplyClipKeyframes position key error: " + e.toString());
+                }
+            }
+        }
+
+        var scaleKeysAfter = _ocPropertyKeySnapshot(scaleProp);
+        var positionKeysAfter = _ocPropertyKeySnapshot(posProp);
+        var canReadScaleValues = !scaleProp || typeof scaleProp.getValueAtKey === "function" || typeof scaleProp.getValueAtTime === "function";
+        var canReadPositionValues = !posProp || typeof posProp.getValueAtKey === "function" || typeof posProp.getValueAtTime === "function";
+        var canReadKeys = canReadScaleValues && canReadPositionValues && !!(scaleProp || posProp);
+        var verifiedWrites = 0;
+        if (canReadKeys) {
+            for (var verifyKeyIndex = 0; verifyKeyIndex < keyframes.length; verifyKeyIndex++) {
+                var verifyKeyframe = keyframes[verifyKeyIndex];
+                var verifyTime = Number(verifyKeyframe.time) || 0;
+                var verifyTimeKey = verifyTime.toFixed(6);
+                if (scaleProp) {
+                    var scaleValueAfter = _ocPropertyValueAtTime(scaleProp, verifyTime);
+                    var scaleKeyAdded = scaleKeysBefore !== null && scaleKeysAfter !== null &&
+                        !_ocArrayContains(scaleKeysBefore, verifyTimeKey) && _ocArrayContains(scaleKeysAfter, verifyTimeKey);
+                    if (_ocScalarClose(scaleValueAfter, verifyKeyframe.scale !== undefined ? verifyKeyframe.scale : 100) &&
+                            (scaleKeyAdded || !_ocValuesEqual(scaleValuesBefore[verifyKeyIndex], scaleValueAfter))) verifiedWrites++;
+                }
+                if (posProp) {
+                    var positionValueAfter = _ocPropertyValueAtTime(posProp, verifyTime);
+                    var positionKeyAdded = positionKeysBefore !== null && positionKeysAfter !== null &&
+                        !_ocArrayContains(positionKeysBefore, verifyTimeKey) && _ocArrayContains(positionKeysAfter, verifyTimeKey);
+                    if (_ocPositionClose(positionValueAfter, verifyKeyframe.x || 0, verifyKeyframe.y || 0) &&
+                            (positionKeyAdded || !_ocValuesEqual(positionValuesBefore[verifyKeyIndex], positionValueAfter))) verifiedWrites++;
+                }
+            }
+        }
+        var keyStatus = _ocVerificationStatus(reportedWrites, verifiedWrites, canReadKeys);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: keyStatus !== "failed", keyframes_requested: keyframes.length },
+            _ocHostWriteVerification(
+                "ocApplyClipKeyframes",
+                attemptedWrites,
+                reportedWrites,
+                canReadKeys ? verifiedWrites : null,
+                keyStatus,
+                canReadKeys ? "ComponentParam getValueAtKey()/getValueAtTime() value read-back" : "unavailable: ComponentParam value read-back",
+                {
+                    scale_key_count: scaleKeysBefore === null ? null : scaleKeysBefore.length,
+                    position_key_count: positionKeysBefore === null ? null : positionKeysBefore.length
+                },
+                {
+                    scale_key_count: scaleKeysAfter === null ? null : scaleKeysAfter.length,
+                    position_key_count: positionKeysAfter === null ? null : positionKeysAfter.length
+                },
+                canReadKeys ? "setValueAtKey() writes were re-read through independent property value getters." : "This Premiere host does not expose keyframe value read-back through ExtendScript."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocApplyClipKeyframes error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Rename project panel items by nodeId.
+ * renamesJSON: '[{"nodeId": "abc123", "newName": "Interview_01"}, ...]'
+ * Returns: '{"renamed": N, "errors": [...]}'
+ */
+function ocBatchRenameProjectItems(renamesJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+
+        var renames = [];
+        try {
+            renames = JSON.parse(renamesJSON);
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+
+        var renamed = 0;
+        var errors = [];
+        var attemptedRenames = 0;
+        var renameNamesBefore = [];
+
+        for (var i = 0; i < renames.length; i++) {
+            var rename = renames[i];
+            try {
+                if (!rename || !rename.nodeId || typeof rename.newName !== "string" || rename.newName.length === 0) {
+                    errors.push("Rename " + i + ": missing nodeId or newName");
+                    continue;
+                }
+                var found = _findByNodeId(app.project.rootItem, rename.nodeId, 0);
+                if (found) {
+                    attemptedRenames++;
+                    renameNamesBefore[i] = String(found.name || "");
+                    found.name = rename.newName;
+                    renamed++;
+                } else {
+                    errors.push("nodeId not found: " + rename.nodeId);
+                }
+            } catch (e) {
+                errors.push("Rename " + i + " (" + rename.nodeId + "): " + e.toString());
+                _ocLog("ocBatchRenameProjectItems item " + i + " error: " + e.toString());
+            }
+        }
+
+        var verifiedRenames = 0;
+        for (var verifyIndex = 0; verifyIndex < renames.length; verifyIndex++) {
+            var verifyRename = renames[verifyIndex];
+            if (!verifyRename || !verifyRename.nodeId || !verifyRename.newName) continue;
+            try {
+                var verifiedItem = _findByNodeId(app.project.rootItem, verifyRename.nodeId, 0);
+                if (verifiedItem && String(verifiedItem.name || "") === String(verifyRename.newName) &&
+                        renameNamesBefore[verifyIndex] !== String(verifyRename.newName)) verifiedRenames++;
+            } catch (verifyError) {
+                _ocLog("ocBatchRenameProjectItems read-back error: " + verifyError.toString());
+            }
+        }
+        var renameStatus = _ocVerificationStatus(renamed, verifiedRenames, true);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: renameStatus !== "failed", renamed: renamed, errors: errors },
+            _ocHostWriteVerification(
+                "ocBatchRenameProjectItems",
+                attemptedRenames,
+                renamed,
+                verifiedRenames,
+                renameStatus,
+                "rootItem nodeId lookup and ProjectItem.name read-back",
+                { requested: renames.length },
+                { matching_names: verifiedRenames },
+                "ProjectItem.name assignments are verified by resolving each nodeId again from the project root."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocBatchRenameProjectItems error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Recursive helper: find a project item by nodeId.
+ */
+function _findByNodeId(parent, nodeId, depth) {
+    if (depth > 20) return null;
+    var numChildren = 0;
+    try { numChildren = parent.children.numItems; } catch (e) { return null; }
+    for (var i = 0; i < numChildren; i++) {
+        try {
+            var item = parent.children[i];
+            if (!item) continue;
+            if (item.nodeId === nodeId) return item;
+            // Recurse into bins
+            var isBin = false;
+            try { isBin = (item.type === 2); } catch (e) {}
+            if (isBin) {
+                var found = _findByNodeId(item, nodeId, depth + 1);
+                if (found) return found;
+            }
+        } catch (e) {}
+    }
+    return null;
+}
+
+
+/**
+ * Create project bins and auto-sort items into them by rules.
+ * rulesJSON: '[{"binName": "B-Roll", "rule": "contains", "field": "name", "value": "broll"}, ...]'
+ * Returns: '{"bins_created": N, "items_moved": M}'
+ */
+function ocCreateSmartBins(rulesJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+
+        var rules = [];
+        try {
+            rules = JSON.parse(rulesJSON);
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+
+        var binsCreated = 0;
+        var itemsMoved = 0;
+        var beforeProjectItems = _ocProjectItemSnapshot(app.project.rootItem, [], "root", 0);
+
+        // Collect all media items from the project
+        var mediaItems = [];
+        _collectMediaItems(app.project.rootItem, mediaItems, 0);
+
+        for (var ri = 0; ri < rules.length; ri++) {
+            var rule = rules[ri];
+            var binName = rule.binName || "Unnamed Bin";
+            var ruleType = (rule.rule || "contains").toLowerCase();
+            var ruleField = (rule.field || "name").toLowerCase();
+            var ruleValue = (rule.value !== undefined ? String(rule.value) : "").toLowerCase();
+
+            // Find or create the target bin
+            var targetBin = null;
+            try {
+                // Check root for existing bin with this name
+                var root = app.project.rootItem;
+                for (var bi = 0; bi < root.children.numItems; bi++) {
+                    try {
+                        var child = root.children[bi];
+                        if (child.type === 2 && child.name === binName) {
+                            targetBin = child;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+                if (!targetBin) {
+                    targetBin = root.createBin(binName);
+                    binsCreated++;
+                }
+            } catch (e) {
+                _ocLog("ocCreateSmartBins bin create error: " + e.toString());
+                continue;
+            }
+
+            if (!targetBin) continue;
+
+            // Test each media item against the rule
+            for (var ii = 0; ii < mediaItems.length; ii++) {
+                var mediaItem = mediaItems[ii];
+                try {
+                    var matches = false;
+
+                    if (ruleField === "name") {
+                        var itemNameLower = (mediaItem.name || "").toLowerCase();
+                        if (ruleType === "contains") {
+                            matches = itemNameLower.indexOf(ruleValue) >= 0;
+                        } else if (ruleType === "starts_with") {
+                            matches = itemNameLower.indexOf(ruleValue) === 0;
+                        } else if (ruleType === "ends_with") {
+                            matches = itemNameLower.length >= ruleValue.length &&
+                                      itemNameLower.indexOf(ruleValue, itemNameLower.length - ruleValue.length) !== -1;
+                        }
+                    } else if (ruleField === "type") {
+                        var hasVid = false;
+                        var hasAud = false;
+                        try { hasVid = mediaItem.hasVideo(); } catch (e) {}
+                        try { hasAud = mediaItem.hasAudio(); } catch (e) {}
+                        if (ruleValue === "video") {
+                            matches = hasVid;
+                        } else if (ruleValue === "audio") {
+                            matches = hasAud && !hasVid;
+                        } else if (ruleValue === "av") {
+                            matches = hasVid && hasAud;
+                        }
+                    } else if (ruleField === "duration") {
+                        var dur = 0;
+                        try {
+                            var op = mediaItem.getOutPoint();
+                            dur = op ? op.seconds : 0;
+                        } catch (e) {}
+                        var ruleNum = parseFloat(ruleValue) || 0;
+                        if (ruleType === "duration_gt") {
+                            matches = dur > ruleNum;
+                        } else if (ruleType === "duration_lt") {
+                            matches = dur < ruleNum;
+                        }
+                    }
+
+                    if (matches) {
+                        try {
+                            mediaItem.moveBin(targetBin);
+                            itemsMoved++;
+                        } catch (e) {
+                            _ocLog("ocCreateSmartBins moveBin error: " + e.toString());
+                        }
+                    }
+                } catch (e) {
+                    _ocLog("ocCreateSmartBins item test error: " + e.toString());
+                }
+            }
+        }
+
+        var afterProjectItems = _ocProjectItemSnapshot(app.project.rootItem, [], "root", 0);
+        var verifiedProjectChanges = _ocFingerprintAddedCount(beforeProjectItems, afterProjectItems) +
+            _ocFingerprintDeltaCount(beforeProjectItems, afterProjectItems);
+        // A move changes both the old and new parent fingerprint, so two
+        // fingerprint changes represent one verified move. Added bins count
+        // once. Cap the evidence at the number of reported host mutations.
+        var reportedProjectChanges = binsCreated + itemsMoved;
+        var verifiedSmartBinWrites = Math.min(reportedProjectChanges, verifiedProjectChanges);
+        var smartBinStatus = _ocVerificationStatus(reportedProjectChanges, verifiedSmartBinWrites, true);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            {
+                success: smartBinStatus !== "failed",
+                bins_created: binsCreated,
+                items_moved: itemsMoved
+            },
+            _ocHostWriteVerification(
+                "ocCreateSmartBins",
+                rules.length,
+                reportedProjectChanges,
+                verifiedSmartBinWrites,
+                smartBinStatus,
+                "rootItem recursive project-tree fingerprint diff",
+                { project_item_count: beforeProjectItems.length },
+                { project_item_count: afterProjectItems.length },
+                "Bin creation and item moves are verified by re-walking project-item names, identities, and parent bins."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocCreateSmartBins error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Helper: collect all non-bin media items from the project tree into an array.
+ */
+function _collectMediaItems(parent, items, depth) {
+    if (depth > 20) return;
+    var numChildren = 0;
+    try { numChildren = parent.children.numItems; } catch (e) { return; }
+    for (var i = 0; i < numChildren; i++) {
+        try {
+            var item = parent.children[i];
+            if (!item) continue;
+            var isBin = false;
+            try { isBin = (item.type === 2); } catch (e) {}
+            if (isBin) {
+                _collectMediaItems(item, items, depth + 1);
+            } else {
+                items.push(item);
+            }
+        } catch (e) {}
+    }
+}
+
+
+/**
+ * Create a native Premiere Pro caption track from SRT-style segment data.
+ * Writes an SRT file to temp and imports it for maximum cross-version compatibility.
+ * srtJSON can be a legacy segment array or a RA-46 sidecar/cue payload.
+ * Returns a caption import and placement result or '{"error": "..."}'
+ */
+function ocAddNativeCaptionTrack(srtJSON) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+
+        function _ocCaptionArrayCandidate(value) {
+            return value && typeof value === "object" && value.length !== undefined;
+        }
+
+        function _ocStringField(value) {
+            if (value === undefined || value === null) return "";
+            return String(value);
+        }
+
+        function _ocSegmentPayload(value) {
+            var info = {
+                segments: [],
+                sidecar_path: "",
+                source: "legacy_array"
+            };
+            if (_ocCaptionArrayCandidate(value)) {
+                info.segments = value;
+                return info;
+            }
+            if (!value || typeof value !== "object") {
+                return info;
+            }
+            info.sidecar_path = _ocStringField(value.sidecar_path || value.sidecarPath || "");
+            var sidecar = value.sidecar || value.caption_sidecar || value.captionSidecar;
+            if (sidecar && typeof sidecar === "object" && !info.sidecar_path) {
+                info.sidecar_path = _ocStringField(sidecar.sidecar_path || sidecar.sidecarPath || sidecar.path || sidecar.file || "");
+            }
+            if (_ocCaptionArrayCandidate(value.segments)) {
+                info.segments = value.segments;
+                info.source = "segments";
+                return info;
+            }
+            if (_ocCaptionArrayCandidate(value.cues)) {
+                info.segments = value.cues;
+                info.source = "sidecar_cues";
+                return info;
+            }
+            if (value.caption_track_snapshot && _ocCaptionArrayCandidate(value.caption_track_snapshot.segments)) {
+                info.segments = value.caption_track_snapshot.segments;
+                info.source = "caption_track_snapshot";
+                return info;
+            }
+
+            if (sidecar && typeof sidecar === "object") {
+                if (_ocCaptionArrayCandidate(sidecar.cues)) {
+                    info.segments = sidecar.cues;
+                    info.source = "sidecar_cues";
+                    return info;
+                }
+                if (_ocCaptionArrayCandidate(sidecar.segments)) {
+                    info.segments = sidecar.segments;
+                    info.source = "sidecar_segments";
+                    return info;
+                }
+            }
+            return info;
+        }
+
+        var segments = [];
+        var payload = null;
+        var payloadInfo = null;
+        try {
+            payload = JSON.parse(srtJSON);
+            payloadInfo = _ocSegmentPayload(payload);
+            segments = payloadInfo.segments;
+        } catch (e) {
+            return JSON.stringify({ error: "Invalid JSON: " + e.toString() });
+        }
+
+        if (!segments || segments.length === 0) {
+            return JSON.stringify({ error: "No caption segments provided" });
+        }
+
+        // Helper: format seconds as SRT timecode HH:MM:SS,mmm
+        function _secondsToSrtTime(secs) {
+            var totalMs = Math.round(secs * 1000);
+            var ms = totalMs % 1000;
+            var totalSec = Math.floor(totalMs / 1000);
+            var s = totalSec % 60;
+            var totalMin = Math.floor(totalSec / 60);
+            var m = totalMin % 60;
+            var h = Math.floor(totalMin / 60);
+
+            var hh = h < 10 ? "0" + h : String(h);
+            var mm = m < 10 ? "0" + m : String(m);
+            var ss = s < 10 ? "0" + s : String(s);
+            var msStr = ms < 10 ? "00" + ms : (ms < 100 ? "0" + ms : String(ms));
+            return hh + ":" + mm + ":" + ss + "," + msStr;
+        }
+
+        // Write SRT file to temp
+        var tempPath = Folder.temp.fsName + "/opencut_captions.srt";
+        var tempFile = new File(tempPath);
+        if (!tempFile.open("w")) {
+            return JSON.stringify({ error: "Cannot write temp SRT file" });
+        }
+
+        try {
+            var srtIndex = 0;
+            for (var i = 0; i < segments.length; i++) {
+                var seg = segments[i];
+                var segS = Number(seg.start);
+                var segE = Number(seg.end);
+                // Skip invalid segments
+                if (isNaN(segS) || isNaN(segE) || segS < 0 || segE <= segS) continue;
+                // Sanitise the caption body so it doesn't break the SRT
+                // cue boundaries. SRT uses a blank line as the cue separator,
+                // so embedded blank lines in the text would split a single
+                // caption into two malformed cues. Also collapse \r\n to \n
+                // so Premiere's importer doesn't see stray carriage returns
+                // inside the text body on macOS-authored payloads.
+                var rawText = (seg.text != null) ? String(seg.text) : "";
+                rawText = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+                rawText = rawText.replace(/\n{2,}/g, "\n");
+                // Trim trailing whitespace so the writeln below doesn't add
+                // a blank-looking line that ends the cue early.
+                rawText = rawText.replace(/\s+$/g, "");
+                if (!rawText) rawText = " ";  // empty cue body is invalid SRT
+                srtIndex++;
+                tempFile.writeln(String(srtIndex));
+                tempFile.writeln(_secondsToSrtTime(segS) + " --> " + _secondsToSrtTime(segE));
+                tempFile.writeln(rawText);
+                tempFile.writeln("");
+            }
+        } finally {
+            tempFile.close();
+        }
+
+        if (srtIndex === 0) {
+            try { tempFile.remove(); } catch (eNoValid) {}
+            return JSON.stringify({ error: "No valid caption segments provided" });
+        }
+
+        // Import the SRT into the project
+        var captionBin = _findOrCreateBin("OpenCut Captions");
+        var targetBin = captionBin || app.project.rootItem;
+        var binName = "OpenCut Captions";
+        try { if (targetBin && targetBin.name) binName = String(targetBin.name); } catch (eBin) {}
+        var captionItem = null;
+        var imported = false;
+        var warnings = [];
+        var seq = null;
+        try { seq = app.project.activeSequence; } catch (eSeqBefore) { seq = null; }
+        var beforeCaptionProject = _ocProjectItemSnapshot(app.project.rootItem, [], "root", 0);
+        var beforeCaptionClips = _ocSequenceClipSnapshot(seq);
+        var beforeCaptionTracks = _ocCaptionTrackSnapshot(seq);
+        var beforeCaptionTimeline = (beforeCaptionClips || []).concat(beforeCaptionTracks || []);
+
+        try {
+            app.project.importFiles([tempFile.fsName], false, targetBin, false);
+            imported = true;
+        } catch (e) {
+            return JSON.stringify({ error: "SRT import failed: " + e.toString() });
+        }
+
+        try {
+            var pollAttempts = 0;
+            while (!captionItem && pollAttempts < 20) {
+                captionItem = _findProjectItemByPath(app.project.rootItem, tempFile.fsName, 0);
+                if (captionItem) { break; }
+                $.sleep(50);
+                pollAttempts++;
+            }
+        } catch (eFind) {
+            warnings.push("caption_project_item_lookup_failed");
+        }
+
+        try { seq = app.project.activeSequence; } catch (eSeq) { seq = null; }
+
+        var placement = _ocPlaceCaptionItemInSequence(seq, captionItem);
+        for (var w = 0; w < warnings.length; w++) {
+            placement.warnings.push(warnings[w]);
+        }
+        var host = _ocHostVersionInfo();
+
+        var afterCaptionProject = _ocProjectItemSnapshot(app.project.rootItem, [], "root", 0);
+        var afterCaptionClips = _ocSequenceClipSnapshot(seq);
+        var afterCaptionTracks = _ocCaptionTrackSnapshot(seq);
+        var afterCaptionTimeline = (afterCaptionClips || []).concat(afterCaptionTracks || []);
+        var verifiedCaptionImport = _ocFingerprintAddedCount(beforeCaptionProject, afterCaptionProject) > 0 ? 1 : 0;
+        var reportedCaptionPlacement = placement.added_to_timeline ? 1 : 0;
+        var canVerifyCaptionPlacement = (beforeCaptionClips !== null && afterCaptionClips !== null) ||
+            (beforeCaptionTracks !== null && afterCaptionTracks !== null);
+        var verifiedCaptionPlacement = canVerifyCaptionPlacement &&
+            _ocFingerprintAddedCount(beforeCaptionTimeline, afterCaptionTimeline) > 0 ? 1 : 0;
+        var reportedCaptionWrites = (imported ? 1 : 0) + reportedCaptionPlacement;
+        var verifiedCaptionWrites = verifiedCaptionImport + verifiedCaptionPlacement;
+        var captionWriteStatus = _ocVerificationStatus(reportedCaptionWrites, verifiedCaptionWrites, true);
+        // Premiere's CEP API can prove that the SRT asset and a timeline item
+        // exist, but it cannot enumerate imported cue text consistently. Name
+        // that limitation explicitly instead of treating srtIndex as verified.
+        if (captionWriteStatus === "verified" && srtIndex > 0) captionWriteStatus = "partial";
+
+        var response = {
+            success: true,
+            captions_added: srtIndex,
+            imported: imported,
+            added_to_timeline: placement.added_to_timeline,
+            addedToTimeline: placement.addedToTimeline,
+            bin_name: binName,
+            caption_track_index: placement.caption_track_index,
+            video_track_index: placement.video_track_index,
+            fallback_path: placement.fallback_path,
+            sidecar_path: payloadInfo.sidecar_path,
+            segment_payload_source: payloadInfo.source,
+            placement_mode: placement.placement_mode,
+            warnings: placement.warnings,
+            warning: _ocWarningsToString(placement.warnings),
+            message: placement.message,
+            host_version: host.version,
+            host: host,
+            caption_content_verification: "unverified",
+            unverified_caption_count: srtIndex
+        };
+
+        response = _ocAttachHostWriteVerification(
+            response,
+            _ocHostWriteVerification(
+                "ocAddNativeCaptionTrack",
+                2,
+                reportedCaptionWrites,
+                verifiedCaptionWrites,
+                captionWriteStatus,
+                canVerifyCaptionPlacement ? "rootItem project-tree plus caption/video track collection diff" : "rootItem project-tree diff; timeline placement read-back unavailable",
+                {
+                    project_item_count: beforeCaptionProject.length,
+                    timeline_item_count: beforeCaptionTimeline.length
+                },
+                {
+                    project_item_count: afterCaptionProject.length,
+                    timeline_item_count: afterCaptionTimeline.length
+                },
+                "The imported asset and timeline placement were re-read; individual imported cue text is unavailable through a stable CEP read API and remains unverified."
+            )
+        );
+
+        try { tempFile.remove(); } catch (e2) {}
+        return JSON.stringify(response);
+    } catch (e) {
+        _ocLog("ocAddNativeCaptionTrack error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Get all bins (folders) in the project with their contents.
+ * Returns: '[{"name": "BinName", "path": "BinName/SubBin", "item_count": N}]'
+ */
+function ocGetProjectBins() {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+
+        var bins = [];
+        _collectBins(app.project.rootItem, bins, "", 0);
+        return JSON.stringify(bins);
+    } catch (e) {
+        _ocLog("ocGetProjectBins error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+/**
+ * Helper: recursively collect bins into an array with path tracking.
+ */
+function _collectBins(parent, bins, parentPath, depth) {
+    if (depth > 20) return;
+    var numChildren = 0;
+    try { numChildren = parent.children.numItems; } catch (e) { return; }
+    for (var i = 0; i < numChildren; i++) {
+        try {
+            var item = parent.children[i];
+            if (!item) continue;
+            var isBin = false;
+            try { isBin = (item.type === 2); } catch (e) {}
+            if (isBin) {
+                var binName = item.name || "";
+                var binPath = parentPath ? (parentPath + "/" + binName) : binName;
+                var itemCount = 0;
+                try { itemCount = item.children.numItems; } catch (e) {}
+                bins.push({
+                    name: binName,
+                    path: binPath,
+                    item_count: itemCount
+                });
+                // Recurse into sub-bins
+                _collectBins(item, bins, binPath, depth + 1);
+            }
+        } catch (e) {
+            _ocLog("_collectBins item " + i + " error: " + e.toString());
+        }
+    }
+}
+
+
+/**
+ * Queue a sequence range export to Adobe Media Encoder.
+ * outputPath: full path to the output file
+ * startSeconds: in-point in seconds
+ * endSeconds: out-point in seconds
+ * Returns: '{"success": true}' or '{"error": "..."}'
+ */
+function ocExportSequenceRange(outputPath, startSeconds, endSeconds) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+
+        // Validate time parameters
+        var start = Number(startSeconds);
+        var end = Number(endSeconds);
+        if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
+            return JSON.stringify({ error: "Invalid time range: start=" + startSeconds + " end=" + endSeconds });
+        }
+        startSeconds = start;
+        endSeconds = end;
+
+        // Save original in/out points so we can restore after export
+        var origIn = -1, origOut = -1;
+        try { origIn = seq.getInPoint(); } catch (e) {}
+        try { origOut = seq.getOutPoint(); } catch (e) {}
+
+        // Set in/out points on the sequence — abort if either fails
+        try {
+            seq.setInPoint(startSeconds);
+        } catch (e) {
+            _ocLog("ocExportSequenceRange setInPoint error: " + e.toString());
+            return JSON.stringify({ error: "Failed to set in-point: " + e.toString() });
+        }
+        try {
+            seq.setOutPoint(endSeconds);
+        } catch (e) {
+            _ocLog("ocExportSequenceRange setOutPoint error: " + e.toString());
+            // Restore in-point before returning
+            try { if (origIn >= 0) seq.setInPoint(origIn); } catch (e2) {}
+            return JSON.stringify({ error: "Failed to set out-point: " + e.toString() });
+        }
+
+        // Queue to AME
+        var encodeError = null;
+        try {
+            app.encoder.encodeSequence(seq, outputPath, "", 1, 2);
+        } catch (e) {
+            encodeError = e.toString();
+        }
+
+        // Restore original in/out points regardless of success/failure.
+        // setInPoint/setOutPoint expect seconds (Number); seq.end is a Time
+        // object whose .seconds property must be unwrapped or older Premiere
+        // builds raise ``Invalid argument`` and skip the restore.
+        try { if (origIn >= 0) seq.setInPoint(origIn); else seq.setInPoint(0); } catch (e) {}
+        try {
+            if (origOut >= 0) {
+                seq.setOutPoint(origOut);
+            } else {
+                var _endSec = 0;
+                try { _endSec = seq.end && seq.end.seconds != null ? seq.end.seconds : 0; } catch (_ee) {}
+                seq.setOutPoint(_endSec);
+            }
+        } catch (e) {}
+
+        var restoredIn = null, restoredOut = null;
+        try { restoredIn = _ocTimeSeconds(seq.getInPoint()); } catch (eRestoreIn) {}
+        try { restoredOut = _ocTimeSeconds(seq.getOutPoint()); } catch (eRestoreOut) {}
+        var originalInSeconds = _ocTimeSeconds(origIn);
+        var originalOutSeconds = _ocTimeSeconds(origOut);
+        var rangeRestored = originalInSeconds !== null && originalOutSeconds !== null &&
+            restoredIn !== null && restoredOut !== null &&
+            _ocScalarClose(originalInSeconds, restoredIn) && _ocScalarClose(originalOutSeconds, restoredOut);
+        var exportResult = encodeError
+            ? { error: "AME encode failed: " + encodeError }
+            : { success: true };
+        exportResult.range_restored = rangeRestored;
+        exportResult = _ocAttachHostWriteVerification(
+            exportResult,
+            _ocHostWriteVerification(
+                "ocExportSequenceRange",
+                1,
+                encodeError ? 0 : 1,
+                null,
+                "unverified",
+                "unavailable: Adobe Media Encoder queue has no stable CEP read-back; sequence in/out restoration was re-read",
+                { in_seconds: originalInSeconds, out_seconds: originalOutSeconds },
+                { in_seconds: restoredIn, out_seconds: restoredOut, range_restored: rangeRestored },
+                "The temporary sequence range is independently checked after restoration, but CEP cannot prove that AME accepted or retained the queued export."
+            )
+        );
+
+        return JSON.stringify(exportResult);
+    } catch (e) {
+        _ocLog("ocExportSequenceRange error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+// ============================================================================
+// Journal inverse helpers (v1.9.28) — called by the panel's rollback UI.
+//
+// Each inverse function takes a JSON payload that the panel previously stored
+// in the journal at the time of the forward operation, and tries to undo it
+// on a best-effort basis. On ES3 runtimes we cannot use JSON.parse safely in
+// every host, so we fall back to eval when JSON is missing.
+// ============================================================================
+function _ocParse(jsonStr) {
+    if (typeof JSON !== "undefined" && JSON.parse) {
+        return JSON.parse(jsonStr);
+    }
+    // Legacy ExtendScript fallback: validate that the payload only contains
+    // JSON tokens before using eval() on older hosts with no JSON.parse().
+    var sanitized = String(jsonStr || "")
+        .replace(/\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4})/g, "@")
+        .replace(/"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g, "]")
+        .replace(/(?:^|:|,)(?:\s*\[)+/g, "");
+    if (!/^[\],:{}\s]*$/.test(sanitized)) {
+        throw new Error("Unsafe JSON payload");
+    }
+    return eval("(" + jsonStr + ")");  // eslint-disable-line no-eval
+}
+
+// Remove markers matching {time, comment} fingerprints from the active sequence.
+// Accepts either {markers: [{time, comment}, ...]} or a bare array.
+function ocRemoveSequenceMarkers(fingerprintsJSON) {
+    try {
+        if (!app || !app.project || !app.project.activeSequence) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+        var payload = _ocParse(fingerprintsJSON);
+        var fingerprints = payload && payload.markers ? payload.markers : payload;
+        if (!fingerprints || typeof fingerprints.length !== "number") {
+            return JSON.stringify({ error: "Invalid fingerprints" });
+        }
+
+        var seq = app.project.activeSequence;
+        var markers = seq.markers;
+        if (!markers) return JSON.stringify({ error: "Sequence has no markers collection" });
+        var beforeMarkerSnapshot = _ocSequenceMarkerSnapshot(seq);
+
+        // Build a quick lookup by "time|comment" so we don't do O(N*M).
+        var keyFor = function (t, c) {
+            return Number(t).toFixed(4) + "|" + (c || "");
+        };
+        var targetSet = {};
+        var wanted = 0;
+        for (var i = 0; i < fingerprints.length; i++) {
+            var fp = fingerprints[i];
+            if (fp == null) continue;
+            targetSet[keyFor(fp.time, fp.comment || fp.name || "")] = true;
+            wanted++;
+        }
+
+        var removed = 0;
+        var m = markers.getFirstMarker();
+        while (m) {
+            var nextM;
+            try { nextM = markers.getNextMarker(m); } catch (e0) { nextM = null; }
+            var mtime = null;
+            // Premiere Marker exposes time via m.time (Time object with
+            // .seconds). Older code here used m.start which does not exist
+            // on Marker, so the fingerprint match always failed and zero
+            // markers were ever removed. Mirror the pattern used at lines
+            // 1479 / 1618.
+            try { mtime = m.time && m.time.seconds != null ? m.time.seconds : null; } catch (e1) {}
+            var mcomment = "";
+            try { mcomment = m.comments || m.name || ""; } catch (e2) {}
+            if (mtime != null && targetSet[keyFor(mtime, mcomment)]) {
+                try { markers.deleteMarker(m); removed++; } catch (e3) {}
+            }
+            m = nextM;
+        }
+
+        var afterMarkerSnapshot = _ocSequenceMarkerSnapshot(seq);
+        var canVerifyMarkerRemoval = beforeMarkerSnapshot !== null && afterMarkerSnapshot !== null;
+        var verifiedRemovedMarkers = canVerifyMarkerRemoval ? _ocFingerprintDeltaCount(beforeMarkerSnapshot, afterMarkerSnapshot) : null;
+        var removeMarkerStatus = _ocVerificationStatus(removed, verifiedRemovedMarkers, canVerifyMarkerRemoval);
+        return JSON.stringify(_ocAttachHostWriteVerification({
+            success: removeMarkerStatus !== "failed",
+            removed: removed,
+            wanted: wanted
+        }, _ocHostWriteVerification(
+            "ocRemoveSequenceMarkers",
+            wanted,
+            removed,
+            verifiedRemovedMarkers,
+            removeMarkerStatus,
+            canVerifyMarkerRemoval ? "Sequence.markers iterator fingerprint diff" : "unavailable: Sequence.markers iterator",
+            { marker_count: beforeMarkerSnapshot === null ? null : beforeMarkerSnapshot.length },
+            { marker_count: afterMarkerSnapshot === null ? null : afterMarkerSnapshot.length },
+            canVerifyMarkerRemoval ? "deleteMarker() calls are verified by re-reading the sequence marker collection." : "This host does not expose an independently readable marker iterator."
+        )));
+    } catch (e) {
+        _ocLog("ocRemoveSequenceMarkers error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// Restore previous names for project items. Payload: {renames:[{nodeId,oldName}]}.
+function ocUnrenameItems(mapJSON) {
+    try {
+        if (!app || !app.project) return JSON.stringify({ error: "No project" });
+        var payload = _ocParse(mapJSON);
+        var renames = payload && payload.renames ? payload.renames : payload;
+        if (!renames || typeof renames.length !== "number") {
+            return JSON.stringify({ error: "Invalid renames" });
+        }
+
+        var restored = 0, missed = 0, attemptedRestores = 0;
+        var restoreNamesBefore = [];
+        for (var i = 0; i < renames.length; i++) {
+            var entry = renames[i];
+            if (!entry || !entry.oldName) { missed++; continue; }
+            var item = null;
+            if (entry.nodeId) {
+                // _findByNodeId(parent, nodeId, depth) — must pass rootItem
+                // and starting depth or the function silently returns null.
+                try { item = _findByNodeId(app.project.rootItem, entry.nodeId, 0); } catch (e1) { item = null; }
+            }
+            if (!item && entry.currentName) {
+                // Fall back to name lookup. _collectMediaItems(parent, items, depth)
+                // mutates `items` and returns nothing — we own the array.
+                var all = [];
+                try { _collectMediaItems(app.project.rootItem, all, 0); } catch (eC) { all = []; }
+                for (var j = 0; j < all.length; j++) {
+                    if (all[j].name === entry.currentName) { item = all[j]; break; }
+                }
+            }
+            if (item) {
+                try {
+                    attemptedRestores++;
+                    restoreNamesBefore[i] = String(item.name || "");
+                    item.name = entry.oldName;
+                    restored++;
+                } catch (e2) {
+                    _ocLog("ocUnrenameItems rename error: " + e2.toString());
+                    missed++;
+                }
+            } else {
+                missed++;
+            }
+        }
+
+        var verifiedRestores = 0;
+        for (var verifyIndex = 0; verifyIndex < renames.length; verifyIndex++) {
+            var verifyEntry = renames[verifyIndex];
+            if (!verifyEntry || !verifyEntry.oldName) continue;
+            var verifyItem = null;
+            try {
+                if (verifyEntry.nodeId) verifyItem = _findByNodeId(app.project.rootItem, verifyEntry.nodeId, 0);
+                if (verifyItem && String(verifyItem.name || "") === String(verifyEntry.oldName) &&
+                        restoreNamesBefore[verifyIndex] !== String(verifyEntry.oldName)) verifiedRestores++;
+            } catch (verifyError) {
+                _ocLog("ocUnrenameItems read-back error: " + verifyError.toString());
+            }
+        }
+        var restoreStatus = _ocVerificationStatus(restored, verifiedRestores, true);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: restoreStatus !== "failed", restored: restored, missed: missed },
+            _ocHostWriteVerification(
+                "ocUnrenameItems",
+                attemptedRestores,
+                restored,
+                verifiedRestores,
+                restoreStatus,
+                "rootItem nodeId lookup and ProjectItem.name read-back",
+                { requested: renames.length },
+                { matching_names: verifiedRestores },
+                "Inverse names are verified by resolving each nodeId again after the write."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocUnrenameItems error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// Remove a previously-imported sequence by name. Payload: {name:"..."}.
+function ocRemoveImportedSequence(payloadJSON) {
+    try {
+        if (!app || !app.project) return JSON.stringify({ error: "No project" });
+        var payload = _ocParse(payloadJSON);
+        var name = payload && payload.name ? payload.name : "";
+        if (!name) return JSON.stringify({ error: "Missing sequence name" });
+
+        var target = null;
+        var seqs = app.project.sequences;
+        if (seqs) {
+            for (var i = 0; i < seqs.numSequences; i++) {
+                var s = seqs[i];
+                if (s && s.name === name) { target = s; break; }
+            }
+        }
+        if (!target) return JSON.stringify({ error: "Sequence '" + name + "' not found" });
+
+        // ProjectItem.deleteItem() for sequences isn't universal across
+        // Premiere versions, so try the rootItem walk first.
+        // _collectMediaItems(parent, items, depth) mutates `items` and
+        // returns nothing — we must allocate the array ourselves.
+        var items = [];
+        try { _collectMediaItems(app.project.rootItem, items, 0); } catch (eC) { items = []; }
+        // ProjectItemType is not always defined on stripped ExtendScript
+        // engines (e.g., when QE DOM wasn't initialized). Fall back to
+        // numeric enum value 1 (= CLIP) when the identifier is missing.
+        var _CLIP_TYPE = 1;
+        try { if (typeof ProjectItemType !== "undefined" && ProjectItemType && ProjectItemType.CLIP != null) _CLIP_TYPE = ProjectItemType.CLIP; } catch (_eT) {}
+        var deletionReported = false;
+        for (var j = 0; j < items.length; j++) {
+            if (items[j].name === name && items[j].type === _CLIP_TYPE) {
+                try {
+                    items[j].deleteAsset ? items[j].deleteAsset() : app.project.deleteSequence(target);
+                    deletionReported = true;
+                    break;
+                } catch (e0) {}
+            }
+        }
+        if (!deletionReported) {
+            try {
+                app.project.deleteSequence(target);
+                deletionReported = true;
+            } catch (e1) {
+                return JSON.stringify({ error: "Could not delete: " + e1.toString() });
+            }
+        }
+        var sequenceStillExists = _ocSequenceNameExists(name);
+        var canVerifySequenceRemoval = sequenceStillExists !== null;
+        var verifiedSequenceRemoval = canVerifySequenceRemoval && !sequenceStillExists ? 1 : 0;
+        var sequenceRemovalStatus = _ocVerificationStatus(deletionReported ? 1 : 0, verifiedSequenceRemoval, canVerifySequenceRemoval);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: sequenceRemovalStatus !== "failed", removed: name },
+            _ocHostWriteVerification(
+                "ocRemoveImportedSequence",
+                1,
+                deletionReported ? 1 : 0,
+                canVerifySequenceRemoval ? verifiedSequenceRemoval : null,
+                sequenceRemovalStatus,
+                canVerifySequenceRemoval ? "Project.sequences name lookup" : "unavailable: Project.sequences",
+                { sequence_present: true },
+                { sequence_present: sequenceStillExists },
+                canVerifySequenceRemoval ? "The sequence list was re-read after deletion." : "This host did not expose a readable sequence collection."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocRemoveImportedSequence error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// v1.9.34 (H) — Move the active sequence's playhead to *seconds*. One-arg
+// form for simpler panel invocation. Uses ticks (254016000000 per second)
+// when setPlayerPosition expects a tick string, or falls back to seconds.
+function ocSetSequencePlayhead(seconds) {
+    try {
+        if (!app || !app.project || !app.project.activeSequence) {
+            return JSON.stringify({ error: "No active sequence" });
+        }
+        var secs = Number(seconds);
+        if (!isFinite(secs) || secs < 0) {
+            return JSON.stringify({ error: "Invalid seconds" });
+        }
+        var seq = app.project.activeSequence;
+        var beforePlayhead = null;
+        try {
+            var beforePosition = seq.getPlayerPosition ? seq.getPlayerPosition() : null;
+            beforePlayhead = beforePosition && beforePosition.seconds != null ? Number(beforePosition.seconds) : null;
+        } catch (e0) { beforePlayhead = null; }
+
+        // Try the modern setPlayerPosition(ticks_as_string) signature first.
+        var ticks = Math.floor(secs * 254016000000);
+        var setReported = false;
+        try {
+            seq.setPlayerPosition(ticks.toString());
+            setReported = true;
+        } catch (e1) {}
+
+        // Fallback: some Premiere builds accept a Number
+        if (!setReported) {
+            try {
+                seq.setPlayerPosition(ticks);
+                setReported = true;
+            } catch (e2) {}
+        }
+
+        // Last resort: cursor via Time object
+        if (!setReported) {
+            try {
+                var t = {};
+                t.ticks = ticks.toString();
+                seq.setPlayerPosition(t);
+                setReported = true;
+            } catch (e3) {
+                return JSON.stringify({ error: "setPlayerPosition failed on this Premiere version" });
+            }
+        }
+        var afterPlayhead = null;
+        try {
+            var afterPosition = seq.getPlayerPosition ? seq.getPlayerPosition() : null;
+            afterPlayhead = afterPosition && afterPosition.seconds != null ? Number(afterPosition.seconds) : null;
+        } catch (e4) { afterPlayhead = null; }
+        var canVerifyPlayhead = beforePlayhead !== null && afterPlayhead !== null;
+        var verifiedPlayhead = canVerifyPlayhead && Math.abs(afterPlayhead - secs) <= 0.001 &&
+            Math.abs(afterPlayhead - beforePlayhead) > 0.001 ? 1 : 0;
+        var playheadStatus = _ocVerificationStatus(setReported ? 1 : 0, verifiedPlayhead, canVerifyPlayhead);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: playheadStatus !== "failed", seconds: secs },
+            _ocHostWriteVerification(
+                "ocSetSequencePlayhead",
+                1,
+                setReported ? 1 : 0,
+                canVerifyPlayhead ? verifiedPlayhead : null,
+                playheadStatus,
+                canVerifyPlayhead ? "Sequence.getPlayerPosition()" : "unavailable: Sequence.getPlayerPosition()",
+                { seconds: beforePlayhead },
+                { seconds: afterPlayhead },
+                "The playhead position is read independently after setPlayerPosition()."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocSetSequencePlayhead error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+// Remove an imported project item by node id. Payload: {nodeId:"..."}.
+function ocRemoveImportedItem(payloadJSON) {
+    try {
+        if (!app || !app.project) return JSON.stringify({ error: "No project" });
+        var payload = _ocParse(payloadJSON);
+        var nodeId = payload && payload.nodeId ? payload.nodeId : "";
+        if (!nodeId) return JSON.stringify({ error: "Missing nodeId" });
+
+        // _findByNodeId(parent, nodeId, depth) — earlier code passed only
+        // nodeId here, which made the helper treat the string as a parent
+        // and silently return null, so deletes by nodeId never worked.
+        var item = _findByNodeId(app.project.rootItem, nodeId, 0);
+        if (!item) return JSON.stringify({ error: "Item not found" });
+
+        try {
+            if (item.deleteAsset) { item.deleteAsset(); }
+            else if (app.project.deleteAsset) { app.project.deleteAsset(item); }
+            else { return JSON.stringify({ error: "No delete API on this item" }); }
+        } catch (eDel) {
+            return JSON.stringify({ error: "deleteAsset failed: " + eDel.toString() });
+        }
+        var itemAfterDelete = _findByNodeId(app.project.rootItem, nodeId, 0);
+        var verifiedItemRemoval = itemAfterDelete ? 0 : 1;
+        var itemRemovalStatus = _ocVerificationStatus(1, verifiedItemRemoval, true);
+        return JSON.stringify(_ocAttachHostWriteVerification(
+            { success: itemRemovalStatus !== "failed", removed: nodeId },
+            _ocHostWriteVerification(
+                "ocRemoveImportedItem",
+                1,
+                1,
+                verifiedItemRemoval,
+                itemRemovalStatus,
+                "rootItem recursive nodeId lookup",
+                { item_present: true },
+                { item_present: !!itemAfterDelete },
+                "The project tree is re-walked by nodeId after deleteAsset()."
+            )
+        ));
+    } catch (e) {
+        _ocLog("ocRemoveImportedItem error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+// ===========================================================================
+// v1.25.0 Wave H — QE reflection + BridgeTalk async progress
+// ===========================================================================
+
+/**
+ * H2.8 — Reflect the QE DOM's available methods so the panel can
+ * discover undocumented Premiere 2025+ APIs at runtime. Returns a JSON
+ * { methods: [...], premiere_version: "...", probed_at: <unix ts> }.
+ *
+ * Called once at panel startup; the panel POSTs the result to
+ * /system/qe-reflect so the server can surface the catalogue via
+ * GET /system/qe-reflect without re-probing.
+ */
+function ocQeReflect() {
+    var out = { methods: [], premiere_version: "", probed_at: 0, enabled: false };
+    try {
+        if (app && app.getAppSystemInfo) {
+            try {
+                var info = app.getAppSystemInfo();
+                if (info && info.appVersion) out.premiere_version = String(info.appVersion);
+            } catch (eInfo) {}
+        }
+        if (!out.premiere_version && app && app.version) {
+            out.premiere_version = String(app.version);
+        }
+
+        // QE is gated behind enableQE(); not all builds expose it.
+        try {
+            if (typeof app.enableQE === "function") {
+                app.enableQE();
+                out.enabled = true;
+            }
+        } catch (eQe) {
+            out.enabled = false;
+        }
+
+        // Reflect on the qe namespace if present.
+        var names = [];
+        try {
+            if (typeof qe !== "undefined" && qe && qe.reflect && qe.reflect.methods) {
+                var mm = qe.reflect.methods;
+                for (var i = 0; i < mm.length; i++) {
+                    try {
+                        if (mm[i] && mm[i].name) names.push(String(mm[i].name));
+                    } catch (eN) {}
+                }
+            } else if (typeof qe !== "undefined" && qe) {
+                // Older builds: walk the object's own keys.
+                for (var k in qe) {
+                    if (typeof qe[k] === "function") names.push(String(k));
+                }
+            }
+        } catch (eRefl) {
+            _ocLog("ocQeReflect: reflect call failed: " + eRefl.toString());
+        }
+
+        // Cap to 500 entries so the payload stays small.
+        if (names.length > 500) names.length = 500;
+        out.methods = names;
+
+        try { out.probed_at = (new Date()).getTime() / 1000.0; } catch (eT) { out.probed_at = 0; }
+    } catch (e) {
+        _ocLog("ocQeReflect error: " + e.toString());
+        out.error = e.toString();
+    }
+    return JSON.stringify(out);
+}
+
+
+/**
+ * H2.7 — Dispatch a namespaced CSXS event the panel can listen for.
+ *
+ * Usage from another JSX function:
+ *   _ocDispatchEvent("com.opencut.job.progress", { jobId: "...", pct: 42 });
+ *
+ * The panel side registers via
+ *   cs.addEventListener("com.opencut.<name>", handler)
+ *
+ * Fails silently on older hosts without CSXSEvent. Do NOT use template
+ * literals — ExtendScript is ES3 only.
+ */
+function _ocDispatchEvent(eventType, payloadObj) {
+    try {
+        if (typeof CSXSEvent === "undefined") return false;
+        var evt = new CSXSEvent();
+        evt.type = String(eventType || "com.opencut.event");
+        try {
+            evt.data = payloadObj ? JSON.stringify(payloadObj) : "";
+        } catch (e1) {
+            evt.data = "";
+        }
+        evt.dispatch();
+        return true;
+    } catch (e) {
+        _ocLog("_ocDispatchEvent failed: " + e.toString());
+        return false;
+    }
+}
+
+
+/**
+ * H2.7 — Thin wrapper the panel can invoke to confirm CSXS event
+ * dispatch is wired up correctly. Panel listens for
+ *   com.opencut.ping.ack
+ * and toasts "BridgeTalk async ready" on receipt.
+ */
+function ocEmitPingEvent(tag) {
+    var ok = _ocDispatchEvent("com.opencut.ping.ack", {
+        tag: String(tag || ""),
+        t: (new Date()).getTime()
+    });
+    return JSON.stringify({ dispatched: !!ok });
+}
+
+
+/**
+ * F303 — Read the local panel bootstrap secret.
+ *
+ * The panel document is loaded over file://, so its XHR to the loopback
+ * backend carries "Origin: null" and /health refuses it a CSRF token — a
+ * hostile local page presents exactly the same origin. ExtendScript can read
+ * the filesystem while the panel's browser context cannot, so reading this
+ * 0600 file is how the real panel proves it is running inside Premiere.
+ *
+ * Returns JSON: {ok: true, token: "..."} or {ok: false, reason: "..."}.
+ * The token is never logged.
+ */
+function ocReadPanelBootstrapToken() {
+    var f = null;
+    try {
+        var home = Folder.userData ? Folder("~").fsName : "";
+        if (!home) {
+            return '{"ok":false,"reason":"No home folder"}';
+        }
+        var path = home + "/.opencut/panel_bootstrap.token";
+        f = new File(path);
+        if (!f.exists) {
+            return '{"ok":false,"reason":"Bootstrap file not found"}';
+        }
+        if (!f.open("r")) {
+            return '{"ok":false,"reason":"Bootstrap file unreadable"}';
+        }
+        var raw = f.read();
+        f.close();
+        f = null;
+        var token = String(raw || "").replace(/[\r\n\s]/g, "");
+        if (!token) {
+            return '{"ok":false,"reason":"Bootstrap file empty"}';
+        }
+        if (token.length > 256) {
+            return '{"ok":false,"reason":"Bootstrap token too long"}';
+        }
+        return '{"ok":true,"token":"' + token + '"}';
+    } catch (e) {
+        try { if (f) f.close(); } catch (e2) { }
+        return '{"ok":false,"reason":"Bootstrap read failed"}';
+    }
+}
+
+
+/**
+ * AutoCut-style Smart AutoZoom punch-in on active sequence.
+ * Alternates zoom on clips or cadences (e.g. 100% -> 115% -> 100%).
+ * paramsJson: JSON string { zoomScale: 115, cadenceSec: 4.0, style: "instant"|"smooth", trackIndex: 0 }
+ * Returns JSON { success: true, zoomedClips: count, totalClips: total }
+ */
+function applySmartAutoZoomToSequence(paramsJson) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open in Premiere Pro" });
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return JSON.stringify({ error: "No active sequence found. Please open a sequence in Premiere Pro timeline." });
+        }
+        var params = {};
+        if (typeof paramsJson === "object" && paramsJson !== null) {
+            params = paramsJson;
+        } else if (typeof paramsJson === "string") {
+            try {
+                params = _ocParse(paramsJson);
+                if (typeof params === "string") {
+                    try { params = _ocParse(params); } catch (eInner) {}
+                }
+            } catch (e) {
+                params = {};
+            }
+        }
+
+        var zoomScale = Number(params.zoomScale) || 120;
+        var cadenceSec = Number(params.cadenceSec) || 4.0;
+        var requestedTrack = (params.trackIndex !== undefined && params.trackIndex !== null) ? Number(params.trackIndex) : -1;
+        var scope = String(params.scope || "all").toLowerCase();
+        var anchorX = (params.anchorX !== undefined && params.anchorX !== null) ? Number(params.anchorX) : 0.50;
+        var anchorY = (params.anchorY !== undefined && params.anchorY !== null) ? Number(params.anchorY) : 0.35;
+
+        // Styles support: can be single string or array of styles ["jump", "smooth", "snap_in"]
+        var activeStyles = [];
+        var rawStyles = [];
+        if (params.styles && params.styles.length > 0) {
+            rawStyles = params.styles;
+        } else if (params.style) {
+            rawStyles = [params.style];
+        }
+        for (var si = 0; si < rawStyles.length; si++) {
+            var st = String(rawStyles[si]).toLowerCase().replace(/[\s\-_]/g, "");
+            if (st === "instant" || st === "jumpcut" || st === "jump") {
+                activeStyles.push("jump");
+            } else if (st === "smooth" || st === "push" || st === "glide" || st === "cinematic") {
+                activeStyles.push("smooth");
+            } else if (st === "snap" || st === "snapin" || st === "pop" || st === "popin") {
+                activeStyles.push("snap_in");
+            } else if (st) {
+                activeStyles.push(st);
+            }
+        }
+        if (activeStyles.length === 0) {
+            activeStyles.push("jump");
+        }
+
+        var vTracks = seq.videoTracks;
+        if (!vTracks || vTracks.numTracks === 0) {
+            return JSON.stringify({ error: "No video tracks found in active sequence" });
+        }
+
+        // Auto-detect track with clips if requested track is invalid or empty
+        var targetTrack = null;
+        var targetTrackIdx = 0;
+        if (requestedTrack >= 0 && requestedTrack < vTracks.numTracks && vTracks[requestedTrack].clips && vTracks[requestedTrack].clips.numItems > 0) {
+            targetTrack = vTracks[requestedTrack];
+            targetTrackIdx = requestedTrack;
+        } else {
+            for (var vt = 0; vt < vTracks.numTracks; vt++) {
+                if (vTracks[vt].clips && vTracks[vt].clips.numItems > 0) {
+                    targetTrack = vTracks[vt];
+                    targetTrackIdx = vt;
+                    break;
+                }
+            }
+        }
+
+        if (!targetTrack || !targetTrack.clips || targetTrack.clips.numItems === 0) {
+            return JSON.stringify({ error: "No video clips found on timeline. Add video clips to the sequence first." });
+        }
+
+        var numClips = targetTrack.clips.numItems;
+
+        // Premiere Pro ExtendScript Motion Position uses NORMALIZED coordinates (0.0 to 1.0):
+        // [0.5, 0.5] represents the exact center of the sequence frame.
+        // Passing pixel coordinates (like [960, 540]) causes Premiere to overflow to 32767.0!
+        var defaultPos = [0.50, 0.50];
+        var maxNormShift = 0.10; // Clamped to within +/-10% of frame center
+        var rawNormShiftX = (0.50 - anchorX) * ((zoomScale - 100) / 100.0) * 0.35;
+        var rawNormShiftY = (0.50 - anchorY) * ((zoomScale - 100) / 100.0) * 0.35;
+        var safeNormShiftX = Math.max(-maxNormShift, Math.min(maxNormShift, rawNormShiftX));
+        var safeNormShiftY = Math.max(-maxNormShift, Math.min(maxNormShift, rawNormShiftY));
+        var zoomedPos = [0.50 + safeNormShiftX, 0.50 + safeNormShiftY];
+
+        // Setup SFX placement on dedicated separate audio track
+        var sfxEnabled = (params.sfxEnabled !== false);
+        var sfxItem = null;
+        var sfxTrack = null;
+        var sfxPlacedCount = 0;
+        var sfxPresetName = params.sfxPreset || "whoosh_soft.wav";
+        var sfxVolumeDb = (params.sfxVolumeDb !== undefined && params.sfxVolumeDb !== null) ? Number(params.sfxVolumeDb) : -6.0;
+        var sfxLinearGain = Math.pow(10.0, sfxVolumeDb / 20.0);
+
+        if (sfxEnabled && seq.audioTracks) {
+            try {
+                // 1. Resolve SFX audio asset path
+                var candidatePaths = [];
+                if (params.sfxFullPath) candidatePaths.push(params.sfxFullPath);
+                candidatePaths.push("E:/autocut/assets/sfx/" + sfxPresetName);
+                candidatePaths.push("E:/autocut/extension/com.opencut.panel/client/assets/sfx/" + sfxPresetName);
+                candidatePaths.push("C:/Users/h/AppData/Roaming/Adobe/CEP/extensions/com.opencut.panel/client/assets/sfx/" + sfxPresetName);
+
+                var resolvedSfxPath = "";
+                for (var sfi = 0; sfi < candidatePaths.length; sfi++) {
+                    var testF = new File(candidatePaths[sfi]);
+                    if (testF.exists) {
+                        resolvedSfxPath = testF.fsName;
+                        break;
+                    }
+                }
+
+                if (resolvedSfxPath) {
+                    var sfxBin = _findOrCreateBin("OpenCut SFX");
+                    if (!sfxBin) sfxBin = app.project.rootItem;
+
+                    sfxItem = _findProjectItemByPath(app.project.rootItem, resolvedSfxPath, 0);
+                    if (!sfxItem) {
+                        try {
+                            app.project.importFiles([resolvedSfxPath], false, sfxBin, false);
+                            sfxItem = _findProjectItemByPath(app.project.rootItem, resolvedSfxPath, 0);
+                        } catch (eImp) {
+                            _ocLog("Import SFX file failed: " + eImp.toString());
+                        }
+                    }
+                }
+
+                // Helper to verify a track does not contain dialogue/source audio clips
+                function _hasDialogueClips(trk) {
+                    if (!trk || !trk.clips || trk.clips.numItems === 0) return false;
+                    for (var dci = 0; dci < trk.clips.numItems; dci++) {
+                        var dc = trk.clips[dci];
+                        if (!dc) continue;
+                        var nm = (dc.name || "").toLowerCase();
+                        if (nm.indexOf(".mp4") !== -1 || nm.indexOf(".mov") !== -1 || nm.indexOf(".mkv") !== -1 || nm.indexOf(".m4a") !== -1 || nm.indexOf("recording") !== -1) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                // Helper to test if a track actually accepts placing this sfxItem
+                function _trackAcceptsSfx(trk, item) {
+                    if (!trk || !item) return false;
+                    var nB = trk.clips.numItems;
+                    var testT = new Time();
+                    testT.seconds = 86400; // 24 hours far away
+                    try { trk.overwriteClip(item, testT); } catch (eT) {}
+                    if (trk.clips.numItems > nB) {
+                        try { trk.clips[trk.clips.numItems - 1].remove(false, false); } catch (eR) {}
+                        return true;
+                    }
+                    return false;
+                }
+
+                // 2. Look for existing track named "OpenCut SFX" without dialogue that accepts sfxItem
+                for (var ati = 0; ati < seq.audioTracks.numTracks; ati++) {
+                    var at = seq.audioTracks[ati];
+                    if (at && at.name === "OpenCut SFX" && !_hasDialogueClips(at)) {
+                        if (!sfxItem || _trackAcceptsSfx(at, sfxItem)) {
+                            sfxTrack = at;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. If no track found, look for an empty track that accepts sfxItem
+                if (!sfxTrack) {
+                    for (var ati = 0; ati < seq.audioTracks.numTracks; ati++) {
+                        var testTrack = seq.audioTracks[ati];
+                        if (testTrack && testTrack.clips && testTrack.clips.numItems === 0) {
+                            if (!sfxItem || _trackAcceptsSfx(testTrack, sfxItem)) {
+                                sfxTrack = testTrack;
+                                try { sfxTrack.name = "OpenCut SFX"; } catch (eRen) {}
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 4. If still no compatible track found, add a new Mono audio track via QE
+                if (!sfxTrack) {
+                    try {
+                        app.enableQE();
+                        if (typeof qe !== "undefined" && qe.project) {
+                            var qSeq = qe.project.getActiveSequence();
+                            if (qSeq && typeof qSeq.addTracks === "function") {
+                                qSeq.addTracks(0, 0, 1, seq.audioTracks.numTracks, 0); // 0 = Mono
+                            }
+                        }
+                    } catch (eAdd) {
+                        _ocLog("QE addTracks error: " + eAdd.toString());
+                    }
+
+                    try { seq = app.project.activeSequence; } catch (eRef) {}
+
+                    if (seq.audioTracks && seq.audioTracks.numTracks > 0) {
+                        var lastTrack = seq.audioTracks[seq.audioTracks.numTracks - 1];
+                        if (lastTrack && !_hasDialogueClips(lastTrack)) {
+                            try { lastTrack.name = "OpenCut SFX"; } catch (eRen2) {}
+                            sfxTrack = lastTrack;
+                        }
+                    }
+                }
+            } catch (eSfxInit) {
+                _ocLog("SFX setup error: " + eSfxInit.toString());
+            }
+        }
+
+        // Helper to apply volume to placed SFX audio clip
+        function _setClipSfxVolume(clipTime) {
+            if (!sfxTrack || !sfxTrack.clips) return;
+            try {
+                for (var aci = 0; aci < sfxTrack.clips.numItems; aci++) {
+                    var ac = sfxTrack.clips[aci];
+                    if (ac && ac.start && Math.abs(ac.start.seconds - clipTime) < 0.2) {
+                        if (ac.components) {
+                            for (var cmi = 0; cmi < ac.components.numItems; cmi++) {
+                                var aComp = ac.components[cmi];
+                                if (!aComp) continue;
+                                var aDisp = (aComp.displayName || "").toLowerCase();
+                                var aMatch = (aComp.matchName || "").toLowerCase();
+                                if (aDisp.indexOf("volume") !== -1 || aMatch.indexOf("volume") !== -1) {
+                                    for (var api = 0; api < aComp.properties.numItems; api++) {
+                                        var aProp = aComp.properties[api];
+                                        if (!aProp) continue;
+                                        var apDisp = (aProp.displayName || "").toLowerCase();
+                                        var apMatch = (aProp.matchName || "").toLowerCase();
+                                        if (apDisp === "level" || apMatch.indexOf("level") !== -1 || apMatch === "adbe audio level") {
+                                            try { aProp.setValue(sfxLinearGain, true); } catch (eV1) {
+                                                try { aProp.setValue(sfxLinearGain); } catch (eV2) {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            } catch (eVol) {}
+        }
+
+        // Safe property setter helpers
+        function _setPropValSafe(prop, val) {
+            if (!prop) return false;
+            try {
+                if (typeof prop.isTimeVarying === "function" && prop.isTimeVarying()) {
+                    try { prop.setTimeVarying(false); } catch (eTv) {}
+                }
+            } catch (e0) {}
+            try {
+                prop.setValue(val, true);
+                return true;
+            } catch (e1) {
+                try {
+                    prop.setValue(val);
+                    return true;
+                } catch (e2) {
+                    return false;
+                }
+            }
+        }
+
+        function _addKeySafe(prop, seconds, val, interpType) {
+            if (!prop) return false;
+            try {
+                if (typeof prop.setTimeVarying === "function" && !prop.isTimeVarying()) {
+                    try { prop.setTimeVarying(true); } catch (eTv) {}
+                }
+            } catch (e0) {}
+
+            var tObj = null;
+            try {
+                tObj = new Time();
+                tObj.seconds = Number(seconds);
+            } catch (eT) {}
+
+            var keyAdded = false;
+            if (tObj) {
+                try { prop.addKey(tObj); keyAdded = true; } catch (eA1) {}
+                try { prop.setValueAtKey(tObj, val, true); keyAdded = true; } catch (eV1) {
+                    try { prop.setValueAtKey(tObj, val); keyAdded = true; } catch (eV2) {}
+                }
+                if (interpType !== undefined && typeof prop.setInterpolationTypeAtKey === "function") {
+                    try { prop.setInterpolationTypeAtKey(tObj, interpType, true); } catch (eIt1) {}
+                }
+            }
+            if (!keyAdded) {
+                try { prop.addKey(Number(seconds)); } catch (eA2) {}
+                try { prop.setValueAtKey(Number(seconds), val, true); keyAdded = true; } catch (eV3) {
+                    try { prop.setValueAtKey(Number(seconds), val); keyAdded = true; } catch (eV4) {}
+                }
+                if (interpType !== undefined && typeof prop.setInterpolationTypeAtKey === "function") {
+                    try { prop.setInterpolationTypeAtKey(Number(seconds), interpType, true); } catch (eIt2) {}
+                }
+            }
+            return keyAdded;
+        }
+
+        // Safely extract the Motion component from a video clip.
+        function _getMotionComponent(clip) {
+            if (!clip || !clip.components) return null;
+            for (var ci = 0; ci < clip.components.numItems; ci++) {
+                var c = clip.components[ci];
+                if (!c) continue;
+                var cMatch = (c.matchName || "").toLowerCase();
+                var cDisp = (c.displayName || "").toLowerCase();
+                if (cMatch.indexOf("motion") !== -1 || cDisp === "motion") {
+                    return c;
+                }
+            }
+            if (clip.components.numItems >= 2) {
+                var c1 = clip.components[1];
+                if (c1) {
+                    var m1 = (c1.matchName || "").toLowerCase();
+                    if (m1.indexOf("opacity") === -1) {
+                        return c1;
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Proactively sanitize Opacity and Motion Position:
+        // Guarantees no black screen or corrupted out-of-bounds positions
+        function _sanitizeClip(clip, centerPos) {
+            if (!clip || !clip.components) return;
+            var safePos = (centerPos && centerPos.length >= 2) ? [centerPos[0], centerPos[1]] : [0.50, 0.50];
+            try {
+                // Ensure Opacity is 100% and Blend Mode is 0 (Normal)
+                for (var ci = 0; ci < clip.components.numItems; ci++) {
+                    var comp = clip.components[ci];
+                    if (!comp) continue;
+                    var cName = (comp.displayName || "").toLowerCase();
+                    if (cName.indexOf("opacity") !== -1 && comp.properties) {
+                        if (comp.properties.numItems > 0) {
+                            var pOp = comp.properties[0];
+                            if (pOp && typeof pOp.getValue === "function" && pOp.getValue() < 100) {
+                                try { pOp.setValue(100, true); } catch (eO) {}
+                            }
+                        }
+                        if (comp.properties.numItems > 1) {
+                            var pBlend = comp.properties[1];
+                            if (pBlend && typeof pBlend.getValue === "function" && pBlend.getValue() !== 0) {
+                                try { pBlend.setValue(0, true); } catch (eB) {}
+                            }
+                        }
+                    }
+                }
+                // Ensure Motion Position is within normalized frame bounds [0.0, 1.0]
+                var mComp = _getMotionComponent(clip);
+                if (mComp && mComp.properties) {
+                    for (var pi = 0; pi < mComp.properties.numItems; pi++) {
+                        var prop = mComp.properties[pi];
+                        if (!prop) continue;
+                        var pDisp = (prop.displayName || "").toLowerCase();
+                        var pMatch = (prop.matchName || "").toLowerCase();
+                        if (pDisp === "position" || pMatch.indexOf("0001") !== -1 || pMatch === "adbe position") {
+                            // Turn off keyframe stopwatch on Position to eliminate Bézier curve explosion
+                            if (typeof prop.isTimeVarying === "function" && prop.isTimeVarying()) {
+                                try { prop.setTimeVarying(false); } catch (eTv) {}
+                            }
+                            var curVal = prop.getValue();
+                            // If Position is out of normalized bounds (> 1.5 or < -0.5), it is an invalid pixel value or 32767.0
+                            if (!curVal || curVal.length < 2 || curVal[0] > 1.5 || curVal[1] > 1.5 || curVal[0] < -0.5 || curVal[1] < -0.5) {
+                                try { prop.setValue(safePos, true); } catch (eP) {}
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch (eSan) {}
+        }
+
+        var zoomedCount = 0;
+        var styleIndex = 0;
+
+        // Check if there is a single continuous uncut clip on timeline
+        var firstClip = targetTrack.clips[0];
+        var firstStart = (firstClip && firstClip.start && firstClip.start.seconds !== undefined) ? Number(firstClip.start.seconds) : 0;
+        var firstEnd = (firstClip && firstClip.end && firstClip.end.seconds !== undefined) ? Number(firstClip.end.seconds) : 0;
+        var firstDur = firstEnd - firstStart;
+
+        if (numClips === 1 && firstDur > cadenceSec * 1.5) {
+            // Uncut single long clip: create dynamic rhythmic punch-in keyframes along the clip
+            try {
+                var singleClip = firstClip;
+                _sanitizeClip(singleClip, defaultPos);
+                var motionComp = _getMotionComponent(singleClip);
+
+                if (motionComp && motionComp.properties) {
+                    var scaleProp = null;
+                    var posProp = null;
+                    var uniformScaleProp = null;
+
+                    for (var pi = 0; pi < motionComp.properties.numItems; pi++) {
+                        var p = motionComp.properties[pi];
+                        if (!p) continue;
+                        var pDisp = (p.displayName || "").toLowerCase();
+                        var pMatch = (p.matchName || "").toLowerCase();
+
+                        if (pDisp === "uniform scale" || pMatch.indexOf("0004") !== -1 || pMatch.indexOf("uniform") !== -1) {
+                            uniformScaleProp = p;
+                            continue;
+                        }
+                        if ((pDisp === "scale" && pDisp !== "scale width") || pMatch.indexOf("0002") !== -1 || pMatch === "adbe scale") {
+                            scaleProp = p;
+                            continue;
+                        }
+                        if (pDisp === "position" || pMatch.indexOf("0001") !== -1 || pMatch === "adbe position") {
+                            posProp = p;
+                            continue;
+                        }
+                    }
+
+                    if (!scaleProp && motionComp.properties.numItems >= 2) {
+                        if (!posProp && motionComp.properties.numItems > 0) posProp = motionComp.properties[0];
+                        scaleProp = motionComp.properties[1];
+                        if (motionComp.properties.numItems >= 4) uniformScaleProp = motionComp.properties[3];
+                    }
+
+                    if (scaleProp) {
+                        if (uniformScaleProp) {
+                            try { if (typeof uniformScaleProp.setValue === "function") uniformScaleProp.setValue(true, true); } catch (eU) {}
+                        }
+
+                        // Ensure position is cleanly set to centered without spatial keyframe glitches
+                        if (posProp) {
+                            _setPropValSafe(posProp, (anchorX === 0.5 && anchorY === 0.5) ? defaultPos : zoomedPos);
+                        }
+
+                        var currentTime = firstStart;
+                        var beatZoomed = false;
+
+                        while (currentTime < firstEnd) {
+                            var beatEnd = Math.min(currentTime + cadenceSec, firstEnd);
+                            var beatDur = beatEnd - currentTime;
+                            beatZoomed = !beatZoomed;
+
+                            if (beatZoomed && beatDur >= 0.5) {
+                                var curStyle = activeStyles[styleIndex % activeStyles.length];
+                                styleIndex++;
+
+                                if (curStyle === "smooth" && beatDur > 0.6) {
+                                    var easeD = Math.min(0.40, beatDur * 0.25);
+                                    _addKeySafe(scaleProp, currentTime, 100, 1);
+                                    _addKeySafe(scaleProp, currentTime + easeD, zoomScale, 1);
+                                    _addKeySafe(scaleProp, beatEnd - easeD, zoomScale, 1);
+                                    _addKeySafe(scaleProp, beatEnd, 100, 1);
+                                } else if (curStyle === "snap_in" && beatDur > 0.3) {
+                                    var snapD = Math.min(0.18, beatDur * 0.25);
+                                    var pTime = currentTime + (snapD * 0.5);
+                                    var sTime = currentTime + snapD;
+                                    var overScale = zoomScale * 1.04;
+                                    _addKeySafe(scaleProp, currentTime, 100, 1);
+                                    _addKeySafe(scaleProp, pTime, overScale, 1);
+                                    _addKeySafe(scaleProp, sTime, zoomScale, 1);
+                                    _addKeySafe(scaleProp, beatEnd - 0.05, zoomScale, 1);
+                                    _addKeySafe(scaleProp, beatEnd, 100, 1);
+                                } else {
+                                    _addKeySafe(scaleProp, currentTime, zoomScale, 4);
+                                    _addKeySafe(scaleProp, beatEnd, 100, 4);
+                                }
+
+                                if (sfxEnabled && sfxItem && sfxTrack) {
+                                    try {
+                                        var sTime = new Time();
+                                        sTime.seconds = currentTime;
+                                        sfxTrack.overwriteClip(sfxItem, sTime);
+                                        _setClipSfxVolume(currentTime);
+                                        sfxPlacedCount++;
+                                    } catch (eS) {}
+                                }
+
+                                zoomedCount++;
+                            }
+                            currentTime = beatEnd;
+                        }
+                    }
+                }
+            } catch (singleEx) {
+                _ocLog("applySmartAutoZoom single clip error: " + singleEx.toString());
+            }
+        } else {
+            // Multiple cut clips on sequence timeline
+            var shouldZoom = false;
+            var lastZoomTime = -999;
+
+            for (var ci = 0; ci < numClips; ci++) {
+                try {
+                    var clip = targetTrack.clips[ci];
+                    if (!clip) continue;
+
+                    // Scope filtering: if scope is selected, verify clip selection safely
+                    if (scope === "selected") {
+                        var isSel = false;
+                        try {
+                            if (typeof clip.isSelected === "function") {
+                                isSel = clip.isSelected();
+                            } else if (clip.isSelected !== undefined) {
+                                isSel = !!clip.isSelected;
+                            }
+                        } catch (eSel) {
+                            isSel = false;
+                        }
+                        if (!isSel) continue;
+                    }
+
+                    var clipStart = (clip.start && clip.start.seconds !== undefined) ? Number(clip.start.seconds) : 0;
+                    var clipEnd = (clip.end && clip.end.seconds !== undefined) ? Number(clip.end.seconds) : clipStart;
+                    var clipDur = clipEnd - clipStart;
+
+                    // Alternating zoom cadence
+                    if (lastZoomTime < 0 || (clipStart - lastZoomTime >= cadenceSec)) {
+                        shouldZoom = !shouldZoom;
+                    } else if (numClips <= 6) {
+                        // For short sequences with few clips, alternate each clip
+                        shouldZoom = (ci % 2 === 1);
+                    } else {
+                        shouldZoom = false;
+                    }
+
+                    // Always ensure Opacity is 100%, Blend Mode is 0 (Normal) and Position is centered
+                    _sanitizeClip(clip, defaultPos);
+
+                    var motionComp = _getMotionComponent(clip);
+                    if (!motionComp || !motionComp.properties) continue;
+
+                    var scaleProp = null;
+                    var posProp = null;
+                    var uniformScaleProp = null;
+
+                    for (var pi = 0; pi < motionComp.properties.numItems; pi++) {
+                        var p = motionComp.properties[pi];
+                        if (!p) continue;
+                        var pDisp = (p.displayName || "").toLowerCase();
+                        var pMatch = (p.matchName || "").toLowerCase();
+
+                        // Separate Uniform Scale boolean checkbox from actual Scale property
+                        if (pDisp === "uniform scale" || pMatch.indexOf("0004") !== -1 || pMatch.indexOf("uniform") !== -1) {
+                            uniformScaleProp = p;
+                            continue;
+                        }
+                        if ((pDisp === "scale" && pDisp !== "scale width") || pMatch.indexOf("0002") !== -1 || pMatch === "adbe scale") {
+                            scaleProp = p;
+                            continue;
+                        }
+                        if (pDisp === "position" || pMatch.indexOf("0001") !== -1 || pMatch === "adbe position") {
+                            posProp = p;
+                            continue;
+                        }
+                    }
+
+                    // Fallback to property indices if not resolved by name
+                    if (!scaleProp && motionComp.properties.numItems >= 2) {
+                        if (!posProp && motionComp.properties.numItems > 0) posProp = motionComp.properties[0];
+                        scaleProp = motionComp.properties[1];
+                        if (motionComp.properties.numItems >= 4) uniformScaleProp = motionComp.properties[3];
+                    }
+
+                    if (!scaleProp) continue;
+
+                    // Ensure Uniform Scale is active
+                    if (uniformScaleProp) {
+                        try {
+                            if (typeof uniformScaleProp.setValue === "function") {
+                                uniformScaleProp.setValue(true, true);
+                            }
+                        } catch (eUni) {}
+                    }
+
+                    var currentStyle = activeStyles[styleIndex % activeStyles.length];
+
+                    if (shouldZoom) {
+                        // Clear any previous keyframes on this clip range first
+                        try {
+                            var cStT = new Time(); cStT.seconds = clipStart;
+                            var cEnT = new Time(); cEnT.seconds = clipEnd;
+                            scaleProp.removeKeyRange(cStT, cEnT, true);
+                        } catch (eRm) {}
+
+                        if (currentStyle === "smooth" && clipDur > 0.35) {
+                            if (clipDur >= 1.0) {
+                                var easeDur = Math.min(0.40, clipDur * 0.25);
+                                var inTime = clipStart + easeDur;
+                                var outTime = clipEnd - easeDur;
+
+                                _addKeySafe(scaleProp, clipStart, 100, 1);
+                                _addKeySafe(scaleProp, inTime, zoomScale, 1);
+                                _addKeySafe(scaleProp, outTime, zoomScale, 1);
+                                _addKeySafe(scaleProp, clipEnd, 100, 1);
+                            } else {
+                                // Shorter clip: smooth continuous push
+                                _addKeySafe(scaleProp, clipStart, 100, 1);
+                                _addKeySafe(scaleProp, clipEnd, zoomScale, 1);
+                            }
+
+                            if (posProp) {
+                                _setPropValSafe(posProp, zoomedPos);
+                            }
+                        } else if (currentStyle === "snap_in" && clipDur > 0.2) {
+                            var snapDur = Math.min(0.18, clipDur * 0.35);
+                            var peakTime = clipStart + (snapDur * 0.5);
+                            var settleTime = clipStart + snapDur;
+                            var overshootScale = zoomScale * 1.04;
+
+                            _addKeySafe(scaleProp, clipStart, 100, 1);
+                            _addKeySafe(scaleProp, peakTime, overshootScale, 1);
+                            _addKeySafe(scaleProp, settleTime, zoomScale, 1);
+
+                            if (posProp) {
+                                _setPropValSafe(posProp, zoomedPos);
+                            }
+                        } else {
+                            // Instant Jump punch-in: scale the clip cleanly
+                            _setPropValSafe(scaleProp, zoomScale);
+                            if (posProp) {
+                                _setPropValSafe(posProp, zoomedPos);
+                            }
+                        }
+
+                        // SFX placement at cut
+                        if (sfxEnabled && sfxItem && sfxTrack) {
+                            try {
+                                var sfxTime = new Time();
+                                sfxTime.seconds = clipStart;
+                                sfxTrack.overwriteClip(sfxItem, sfxTime);
+                                _setClipSfxVolume(clipStart);
+                                sfxPlacedCount++;
+                            } catch (eSfxPlace) {
+                                _ocLog("AutoZoom SFX error: " + eSfxPlace.toString());
+                            }
+                        }
+
+                        zoomedCount++;
+                        lastZoomTime = clipStart;
+                        styleIndex++;
+                    } else {
+                        // Reset unzoomed clips back to 100% and default position
+                        _setPropValSafe(scaleProp, 100);
+                        if (posProp) {
+                            _setPropValSafe(posProp, defaultPos);
+                        }
+                    }
+                } catch (clipEx) {
+                    _ocLog("applySmartAutoZoom loop ci=" + ci + " error: " + clipEx.toString());
+                }
+            }
+
+            // Fallback safety: if zoomedCount is 0, ensure at least alternating clips are zoomed
+            if (zoomedCount === 0 && numClips > 0) {
+                for (var fci = 0; fci < numClips; fci += 2) {
+                    try {
+                        var fallbackClip = targetTrack.clips[fci];
+                        if (!fallbackClip) continue;
+                        _sanitizeClip(fallbackClip, defaultPos);
+                        var mComp = _getMotionComponent(fallbackClip);
+                        if (mComp && mComp.properties) {
+                            var sP = null;
+                            var pP = null;
+                            for (var pi = 0; pi < mComp.properties.numItems; pi++) {
+                                var prop = mComp.properties[pi];
+                                if (!prop) continue;
+                                var pDisp = (prop.displayName || "").toLowerCase();
+                                var pMatch = (prop.matchName || "").toLowerCase();
+                                if ((pDisp === "scale" && pDisp !== "scale width") || pMatch.indexOf("0002") !== -1 || pMatch === "adbe scale") {
+                                    sP = prop;
+                                } else if (pDisp === "position" || pMatch.indexOf("0001") !== -1 || pMatch === "adbe position") {
+                                    pP = prop;
+                                }
+                            }
+                            if (!sP && mComp.properties.numItems >= 2) {
+                                pP = mComp.properties[0];
+                                sP = mComp.properties[1];
+                            }
+                            if (sP) {
+                                var fbStyle = activeStyles[styleIndex % activeStyles.length];
+                                var fbStart = (fallbackClip.start && fallbackClip.start.seconds !== undefined) ? Number(fallbackClip.start.seconds) : 0;
+                                var fbEnd = (fallbackClip.end && fallbackClip.end.seconds !== undefined) ? Number(fallbackClip.end.seconds) : fbStart;
+                                var fbDur = fbEnd - fbStart;
+
+                                try {
+                                    var fStT = new Time(); fStT.seconds = fbStart;
+                                    var fEnT = new Time(); fEnT.seconds = fbEnd;
+                                    sP.removeKeyRange(fStT, fEnT, true);
+                                } catch (eRmF) {}
+
+                                if (fbStyle === "smooth" && fbDur > 0.35) {
+                                    _addKeySafe(sP, fbStart, 100, 1);
+                                    _addKeySafe(sP, fbEnd, zoomScale, 1);
+                                } else if (fbStyle === "snap_in" && fbDur > 0.2) {
+                                    var sD = Math.min(0.18, fbDur * 0.35);
+                                    _addKeySafe(sP, fbStart, 100, 1);
+                                    _addKeySafe(sP, fbStart + (sD * 0.5), zoomScale * 1.04, 1);
+                                    _addKeySafe(sP, fbStart + sD, zoomScale, 1);
+                                } else {
+                                    _setPropValSafe(sP, zoomScale);
+                                }
+                                if (pP) _setPropValSafe(pP, zoomedPos);
+                                zoomedCount++;
+                                styleIndex++;
+                            }
+                        }
+                    } catch (eFb) {}
+                }
+            }
+        }
+
+        return JSON.stringify({
+            success: true,
+            zoomedClips: zoomedCount,
+            totalClips: numClips,
+            trackIndex: targetTrackIdx,
+            trackName: "Track V" + (targetTrackIdx + 1),
+            scale: zoomScale,
+            styles: activeStyles,
+            anchor: [Math.round(anchorX * 100), Math.round(anchorY * 100)],
+            sfxPlaced: sfxPlacedCount,
+            sfxTrack: sfxTrack ? sfxTrack.name : "None",
+            sfxPreset: sfxPresetName
+        });
+    } catch (e) {
+        _ocLog("applySmartAutoZoomToSequence error: " + e.toString());
+        return JSON.stringify({ error: e.toString() });
+    }
+}
+
+
+/**
+ * Automatically imports and ripple-inserts a Hook Intro video at 0:00 on active Premiere timeline.
+ * Shifting/rippling the existing timeline clips forward so the Hook plays first.
+ * paramsJson: JSON string or object { hookVideoPath: "..." }
+ * Returns JSON { success: true, sequence: "...", insertedAt: 0, duration: ... }
+ */
+function ocInsertHookIntroToTimeline(paramsJson) {
+    try {
+        if (!app || !app.project) {
+            return JSON.stringify({ error: "No project open in Premiere Pro" });
+        }
+        var params = {};
+        if (typeof paramsJson === "object" && paramsJson !== null) {
+            params = paramsJson;
+        } else if (typeof paramsJson === "string") {
+            try {
+                params = _ocParse(paramsJson);
+                if (typeof params === "string") {
+                    try { params = _ocParse(params); } catch (eInner) {}
+                }
+            } catch (e) {
+                params = {};
+            }
+        }
+
+        var hookVideoPath = params.hookVideoPath;
+        if (!hookVideoPath) {
+            return JSON.stringify({ error: "Missing hookVideoPath parameter" });
+        }
+
+        var cleanPath = String(hookVideoPath).replace(/\\/g, "/");
+        var hFile = new File(cleanPath);
+        if (!hFile.exists) {
+            hFile = new File(hookVideoPath);
+        }
+        if (!hFile.exists) {
+            return JSON.stringify({ error: "Hook video file not found on disk: " + hookVideoPath });
+        }
+
+        var targetBin = _findOrCreateBin("OpenCut Hooks");
+        if (!targetBin) targetBin = app.project.rootItem;
+
+        // Locate or import hook video item into bin
+        var hookItem = _findProjectItemByPath(app.project.rootItem, hFile.fsName, 0);
+        if (!hookItem) {
+            hookItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+        }
+        if (!hookItem) {
+            try {
+                app.project.importFiles([hFile.fsName], false, targetBin, false);
+                hookItem = _findProjectItemByPath(app.project.rootItem, hFile.fsName, 0);
+                if (!hookItem) {
+                    hookItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+                }
+            } catch (ie) {
+                _ocLog("importFiles hook error: " + ie.toString());
+            }
+        }
+
+        // Fallback search by filename
+        if (!hookItem && targetBin && targetBin.children) {
+            for (var b = 0; b < targetBin.children.numItems; b++) {
+                var cItem = targetBin.children[b];
+                if (cItem && cItem.name === hFile.name) {
+                    hookItem = cItem;
+                    break;
+                }
+            }
+        }
+
+        if (!hookItem) {
+            return JSON.stringify({ error: "Could not import hook video into Premiere project bin" });
+        }
+
+        var seq = app.project.activeSequence;
+        var isNewSeq = false;
+
+        if (!seq) {
+            var seqName = "OpenCut - " + (hookItem.name ? hookItem.name.replace(/\.[^.]+$/, "") : "Hooked Sequence");
+            try {
+                if (typeof app.project.createNewSequenceFromClips === "function") {
+                    app.project.createNewSequenceFromClips(seqName, [hookItem], targetBin);
+                    seq = app.project.activeSequence;
+                    isNewSeq = true;
+                }
+            } catch (eSeq) {
+                _ocLog("createNewSequenceFromClips hook error: " + eSeq.toString());
+            }
+
+            if (!seq) {
+                try {
+                    app.project.createNewSequence(seqName, "");
+                    seq = app.project.activeSequence;
+                    isNewSeq = true;
+                    if (seq && seq.videoTracks && seq.videoTracks.numTracks > 0) {
+                        seq.videoTracks[0].insertClip(hookItem, new Time());
+                    }
+                } catch (eNew) {
+                    _ocLog("createNewSequence error: " + eNew.toString());
+                }
+            }
+        } else {
+            // Ripple insert hook clip at 0:00 - pushes all existing clips to the right!
+            var zeroTime = new Time();
+            zeroTime.ticks = "0";
+
+            var vTrack = seq.videoTracks && seq.videoTracks.numTracks > 0 ? seq.videoTracks[0] : null;
+            var aTrack = seq.audioTracks && seq.audioTracks.numTracks > 0 ? seq.audioTracks[0] : null;
+            var placed = false;
+
+            // Priority A: If video track exists, attempt inserting video (which also inserts linked audio)
+            if (vTrack) {
+                try {
+                    vTrack.insertClip(hookItem, zeroTime);
+                    placed = true;
+                } catch (eIns) {
+                    _ocLog("vTrack insertClip notice: " + eIns.toString());
+                    try {
+                        vTrack.overwriteClip(hookItem, zeroTime);
+                        placed = true;
+                    } catch (eOver) {}
+                }
+            }
+
+            // Priority B: If audio-only item or vTrack was unable to accept clip, insert into audio track!
+            if (!placed && aTrack) {
+                try {
+                    aTrack.insertClip(hookItem, zeroTime);
+                    placed = true;
+                } catch (eAIns) {
+                    _ocLog("aTrack insertClip error: " + eAIns.toString());
+                    try {
+                        aTrack.overwriteClip(hookItem, zeroTime);
+                        placed = true;
+                    } catch (eAOver) {
+                        return JSON.stringify({ error: "Failed to place hook clip on timeline: " + eAOver.toString() });
+                    }
+                }
+            }
+
+            if (!placed) {
+                return JSON.stringify({ error: "No compatible video or audio track found in active sequence" });
+            }
+
+            // Set playhead position back to 0:00 for instant review
+            try {
+                if (typeof seq.setPlayerPosition === "function") {
+                    seq.setPlayerPosition(zeroTime);
+                }
+            } catch (pe) {}
+        }
+
+        if (!seq) {
+            seq = app.project.activeSequence;
+        }
+
+        return JSON.stringify({
+            success: true,
+            sequence: seq ? seq.name : "Active Sequence",
+            isNewSequence: isNewSeq,
+            insertedAt: 0,
+            videoName: hFile.name
+        });
+    } catch (ex) {
+        _ocLog("ocInsertHookIntroToTimeline fatal error: " + ex.toString());
+        return JSON.stringify({ error: ex.toString() });
+    }
+}
+

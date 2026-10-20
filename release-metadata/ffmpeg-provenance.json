@@ -1,0 +1,448 @@
+{
+  "required_release_floor": "8.1.3",
+  "required_snapshot_floor_date": "2026-07-06",
+  "reference_git_commit": "01a25f74cc446a683318bab13dfd98a467082ef7",
+  "reference_git_date": "2026-08-03",
+  "required_fix_commits": [
+    "374b726ffa878ee1cadb987bd1e1e20cc7ed8845",
+    "5806e8b9f34f1b0663b3017ef9dd1aa5d08116d1",
+    "4c6217477fc64305055b37d9d1d0d76d30e37f97",
+    "6f80e2765492700622596af720534cef33dd31b4",
+    "1836ef96846937a6cc2443698a693104f5c0b21e",
+    "4da9812e25894fb51d62a8875cfa8eb39b5e20f5",
+    "dbd495f066a85ba96b17433f4306582aa37c3951",
+    "92737390dc133daadce47dd7d2ec8ef3d9ebcbed",
+    "11d5f475be95d22d5f0692220cc772b116abc632",
+    "fd3ee52fab34d98a95b787d0b5ff45685766200c",
+    "de771bd52774a52d45b0e2c82e56995a1ef40df7",
+    "f186c50cf53aec20e9a29059cb22ca3f2d59201c",
+    "a7e38b617b32f996beaa371bbf04b39907d7a527",
+    "5d7112c60e6f0f0742ce47d448e6da0718a70f4c",
+    "86708357d126af84c16f80d9c57335d1e8c845c5",
+    "e7cbfd1c507b57a806a5825b87d609963e862c8c",
+    "aafb5c655edc76a753275c383ebb139feb032718",
+    "b506fafec9a19fcbc2be5271875fd4a63d6615bc"
+  ],
+  "pinned_installer_version": "2026-08-03-git-01a25f74cc-full_build-www.gyan.dev",
+  "pinned_installer_commit": "01a25f74cc446a683318bab13dfd98a467082ef7",
+  "pinned_installer_archive": {
+    "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-2026-08-03-git-01a25f74cc-full_build.7z",
+    "sha256": "8c32ed9800ff421bbcfda96beb0a66783a64a7cd98869b87ec1b494d3c855fcc"
+  },
+  "pinned_source": {
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/01a25f74cc446a683318bab13dfd98a467082ef7.tar.gz",
+    "sha256": "02f09346860e4b0549eb03003443c66dceb9f355c2db4f01746db33984f1e3cf"
+  },
+  "advisory_matrix": [
+    {
+      "cve": "CVE-2026-64832",
+      "component": "NVDEC hardware decoder (libavcodec/nvdec.c)",
+      "fix_commit": "4c6217477fc64305055b37d9d1d0d76d30e37f97",
+      "fix_landed": "2026-07-04",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-64833",
+      "component": "S/PDIF DTS demuxer",
+      "fix_commit": "6f80e2765492700622596af720534cef33dd31b4",
+      "fix_landed": "2026-06-29",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-64835",
+      "component": "ADX/AAX decoder",
+      "fix_commit": "1836ef96846937a6cc2443698a693104f5c0b21e",
+      "fix_landed": "2026-06-30",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66041",
+      "component": "quirc QR filter (vf_quirc)",
+      "fix_commit": "4da9812e25894fb51d62a8875cfa8eb39b5e20f5",
+      "fix_landed": "2026-07-05",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-8461",
+      "component": "MagicYUV decoder",
+      "fix_commit": "374b726ffa878ee1cadb987bd1e1e20cc7ed8845",
+      "fix_landed": "2026-06-12",
+      "affected_max_release": "8.1.1"
+    },
+    {
+      "cve": "CVE-2026-64830",
+      "component": "VobSub subtitle demuxer (libavformat/mpeg.c)",
+      "fix_commit": "dbd495f066a85ba96b17433f4306582aa37c3951",
+      "fix_landed": "2026-07-02",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-64831",
+      "component": "Vulkan HEVC hardware decoder (libavcodec/vulkan_hevc.c)",
+      "fix_commit": "92737390dc133daadce47dd7d2ec8ef3d9ebcbed",
+      "fix_landed": "2026-07-05",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-64834",
+      "component": "RTP/ASF depacketizer (libavformat/rtpdec_asf.c)",
+      "fix_commit": "11d5f475be95d22d5f0692220cc772b116abc632",
+      "fix_landed": "2026-07-02",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-65703",
+      "component": "TDSC video decoder (libavcodec/tdsc.c)",
+      "fix_commit": "fd3ee52fab34d98a95b787d0b5ff45685766200c",
+      "fix_landed": "2026-07-13",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-65704",
+      "component": "TY demuxer (libavformat/ty.c)",
+      "fix_commit": "de771bd52774a52d45b0e2c82e56995a1ef40df7",
+      "fix_landed": "2026-07-13",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-65705",
+      "component": "floodfill video filter (libavfilter/vf_floodfill.c)",
+      "fix_commit": "f186c50cf53aec20e9a29059cb22ca3f2d59201c",
+      "fix_landed": "2026-07-13",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-65706",
+      "component": "swaprect video filter (libavfilter/vf_swaprect.c)",
+      "fix_commit": "a7e38b617b32f996beaa371bbf04b39907d7a527",
+      "fix_landed": "2026-07-13",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66036",
+      "component": "hqdn3d video filter (libavfilter/vf_hqdn3d.c)",
+      "fix_commit": "5d7112c60e6f0f0742ce47d448e6da0718a70f4c",
+      "fix_landed": "2026-07-22",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66037",
+      "component": "IAMF demuxer (libavformat/iamf_parse.c)",
+      "fix_commit": "86708357d126af84c16f80d9c57335d1e8c845c5",
+      "fix_landed": "2026-06-28",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66038",
+      "component": "LCL/ZLIB video decoder (libavcodec/lcldec.c)",
+      "fix_commit": "e7cbfd1c507b57a806a5825b87d609963e862c8c",
+      "fix_landed": "2026-07-05",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66039",
+      "component": "MACE6 audio decoder (libavcodec/mace.c)",
+      "fix_commit": "aafb5c655edc76a753275c383ebb139feb032718",
+      "fix_landed": "2026-07-03",
+      "affected_max_release": "8.1.2"
+    },
+    {
+      "cve": "CVE-2026-66040",
+      "component": "native PNG/APNG encoders (libavcodec/pngenc.c)",
+      "fix_commit": "b506fafec9a19fcbc2be5271875fd4a63d6615bc",
+      "fix_landed": "2026-07-21",
+      "affected_max_release": "8.1.2"
+    }
+  ],
+  "cves_addressed": [
+    "CVE-2026-8461",
+    "CVE-2026-6385",
+    "CVE-2026-39210",
+    "CVE-2026-39211",
+    "CVE-2026-39212",
+    "CVE-2026-39213",
+    "CVE-2026-39214",
+    "CVE-2026-39215",
+    "CVE-2026-39216",
+    "CVE-2026-39217",
+    "CVE-2026-39218",
+    "CVE-2026-64832",
+    "CVE-2026-64833",
+    "CVE-2026-64835",
+    "CVE-2026-66041",
+    "CVE-2026-64830",
+    "CVE-2026-64831",
+    "CVE-2026-64834",
+    "CVE-2026-65703",
+    "CVE-2026-65704",
+    "CVE-2026-65705",
+    "CVE-2026-65706",
+    "CVE-2026-66036",
+    "CVE-2026-66037",
+    "CVE-2026-66038",
+    "CVE-2026-66039",
+    "CVE-2026-66040"
+  ],
+  "release_lane_open": false,
+  "release_lane_note": "No published FFmpeg release currently clears OpenCut's advisory matrix: 8.1.2 is affected by the July 2026 batch, 8.1.3 was never published, and the 9.0 series branched on 2026-06-26 before those fixes landed on master with no backport on record. Use a dated git-master snapshot until a 9.0.x tag is shown to contain them.",
+  "release_branch_points": {
+    "9.0": "2026-06-26"
+  },
+  "bundled": {
+    "ok": true,
+    "lane": "snapshot",
+    "version": "2026-08-03-git-01a25f74cc-full_build-www.gyan.dev",
+    "snapshot_date": "2026-08-03",
+    "git_commit": "01a25f74cc",
+    "flavor": "full",
+    "builder": "gyan.dev",
+    "reason": "git-master snapshot 2026-08-03 clears all 17 graded advisories",
+    "cves": [
+      "CVE-2026-8461",
+      "CVE-2026-6385",
+      "CVE-2026-39210",
+      "CVE-2026-39211",
+      "CVE-2026-39212",
+      "CVE-2026-39213",
+      "CVE-2026-39214",
+      "CVE-2026-39215",
+      "CVE-2026-39216",
+      "CVE-2026-39217",
+      "CVE-2026-39218",
+      "CVE-2026-64832",
+      "CVE-2026-64833",
+      "CVE-2026-64835",
+      "CVE-2026-66041",
+      "CVE-2026-64830",
+      "CVE-2026-64831",
+      "CVE-2026-64834",
+      "CVE-2026-65703",
+      "CVE-2026-65704",
+      "CVE-2026-65705",
+      "CVE-2026-65706",
+      "CVE-2026-66036",
+      "CVE-2026-66037",
+      "CVE-2026-66038",
+      "CVE-2026-66039",
+      "CVE-2026-66040"
+    ],
+    "fix_commits": [
+      "374b726ffa878ee1cadb987bd1e1e20cc7ed8845",
+      "5806e8b9f34f1b0663b3017ef9dd1aa5d08116d1",
+      "4c6217477fc64305055b37d9d1d0d76d30e37f97",
+      "6f80e2765492700622596af720534cef33dd31b4",
+      "1836ef96846937a6cc2443698a693104f5c0b21e",
+      "4da9812e25894fb51d62a8875cfa8eb39b5e20f5",
+      "dbd495f066a85ba96b17433f4306582aa37c3951",
+      "92737390dc133daadce47dd7d2ec8ef3d9ebcbed",
+      "11d5f475be95d22d5f0692220cc772b116abc632",
+      "fd3ee52fab34d98a95b787d0b5ff45685766200c",
+      "de771bd52774a52d45b0e2c82e56995a1ef40df7",
+      "f186c50cf53aec20e9a29059cb22ca3f2d59201c",
+      "a7e38b617b32f996beaa371bbf04b39907d7a527",
+      "5d7112c60e6f0f0742ce47d448e6da0718a70f4c",
+      "86708357d126af84c16f80d9c57335d1e8c845c5",
+      "e7cbfd1c507b57a806a5825b87d609963e862c8c",
+      "aafb5c655edc76a753275c383ebb139feb032718",
+      "b506fafec9a19fcbc2be5271875fd4a63d6615bc"
+    ],
+    "coverage": {
+      "graded": [
+        "CVE-2026-64832",
+        "CVE-2026-64833",
+        "CVE-2026-64835",
+        "CVE-2026-66041",
+        "CVE-2026-8461",
+        "CVE-2026-64830",
+        "CVE-2026-64831",
+        "CVE-2026-64834",
+        "CVE-2026-65703",
+        "CVE-2026-65704",
+        "CVE-2026-65705",
+        "CVE-2026-65706",
+        "CVE-2026-66036",
+        "CVE-2026-66037",
+        "CVE-2026-66038",
+        "CVE-2026-66039",
+        "CVE-2026-66040"
+      ],
+      "graded_count": 17,
+      "ungraded": [],
+      "ungraded_count": 0,
+      "total_known": 17,
+      "complete": true
+    },
+    "ungraded_cves": [],
+    "advisories": [
+      {
+        "cve": "CVE-2026-64832",
+        "component": "NVDEC hardware decoder (libavcodec/nvdec.c)",
+        "fix_commit": "4c6217477fc64305055b37d9d1d0d76d30e37f97",
+        "fix_landed": "2026-07-04",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-64833",
+        "component": "S/PDIF DTS demuxer",
+        "fix_commit": "6f80e2765492700622596af720534cef33dd31b4",
+        "fix_landed": "2026-06-29",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-64835",
+        "component": "ADX/AAX decoder",
+        "fix_commit": "1836ef96846937a6cc2443698a693104f5c0b21e",
+        "fix_landed": "2026-06-30",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66041",
+        "component": "quirc QR filter (vf_quirc)",
+        "fix_commit": "4da9812e25894fb51d62a8875cfa8eb39b5e20f5",
+        "fix_landed": "2026-07-05",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-8461",
+        "component": "MagicYUV decoder",
+        "fix_commit": "374b726ffa878ee1cadb987bd1e1e20cc7ed8845",
+        "fix_landed": "2026-06-12",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-64830",
+        "component": "VobSub subtitle demuxer (libavformat/mpeg.c)",
+        "fix_commit": "dbd495f066a85ba96b17433f4306582aa37c3951",
+        "fix_landed": "2026-07-02",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-64831",
+        "component": "Vulkan HEVC hardware decoder (libavcodec/vulkan_hevc.c)",
+        "fix_commit": "92737390dc133daadce47dd7d2ec8ef3d9ebcbed",
+        "fix_landed": "2026-07-05",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-64834",
+        "component": "RTP/ASF depacketizer (libavformat/rtpdec_asf.c)",
+        "fix_commit": "11d5f475be95d22d5f0692220cc772b116abc632",
+        "fix_landed": "2026-07-02",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-65703",
+        "component": "TDSC video decoder (libavcodec/tdsc.c)",
+        "fix_commit": "fd3ee52fab34d98a95b787d0b5ff45685766200c",
+        "fix_landed": "2026-07-13",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-65704",
+        "component": "TY demuxer (libavformat/ty.c)",
+        "fix_commit": "de771bd52774a52d45b0e2c82e56995a1ef40df7",
+        "fix_landed": "2026-07-13",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-65705",
+        "component": "floodfill video filter (libavfilter/vf_floodfill.c)",
+        "fix_commit": "f186c50cf53aec20e9a29059cb22ca3f2d59201c",
+        "fix_landed": "2026-07-13",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-65706",
+        "component": "swaprect video filter (libavfilter/vf_swaprect.c)",
+        "fix_commit": "a7e38b617b32f996beaa371bbf04b39907d7a527",
+        "fix_landed": "2026-07-13",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66036",
+        "component": "hqdn3d video filter (libavfilter/vf_hqdn3d.c)",
+        "fix_commit": "5d7112c60e6f0f0742ce47d448e6da0718a70f4c",
+        "fix_landed": "2026-07-22",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66037",
+        "component": "IAMF demuxer (libavformat/iamf_parse.c)",
+        "fix_commit": "86708357d126af84c16f80d9c57335d1e8c845c5",
+        "fix_landed": "2026-06-28",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66038",
+        "component": "LCL/ZLIB video decoder (libavcodec/lcldec.c)",
+        "fix_commit": "e7cbfd1c507b57a806a5825b87d609963e862c8c",
+        "fix_landed": "2026-07-05",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66039",
+        "component": "MACE6 audio decoder (libavcodec/mace.c)",
+        "fix_commit": "aafb5c655edc76a753275c383ebb139feb032718",
+        "fix_landed": "2026-07-03",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      },
+      {
+        "cve": "CVE-2026-66040",
+        "component": "native PNG/APNG encoders (libavcodec/pngenc.c)",
+        "fix_commit": "b506fafec9a19fcbc2be5271875fd4a63d6615bc",
+        "fix_landed": "2026-07-21",
+        "status": "fixed",
+        "reason": "build commit 01a25f74cc is a recorded post-fix snapshot"
+      }
+    ],
+    "unresolved_cves": [],
+    "not_applicable_cves": []
+  },
+  "artifacts": [
+    {
+      "name": "ffmpeg.exe",
+      "path": "C:\\repos\\OpenCut\\ffmpeg\\ffmpeg.exe",
+      "size": 222520832,
+      "sha256": "19fc276eaa12c66160dbfb8bed972072eb6f3689e721ff884d830571d6a0b03f"
+    },
+    {
+      "name": "ffprobe.exe",
+      "path": "C:\\repos\\OpenCut\\ffmpeg\\ffprobe.exe",
+      "size": 222311936,
+      "sha256": "4a7fac2c78f3eb6093b1325f3e62f3bec8bca5866c4448d8f14ee80492f8abc4"
+    }
+  ],
+  "source": {
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/01a25f74cc446a683318bab13dfd98a467082ef7.tar.gz",
+    "sha256": "02f09346860e4b0549eb03003443c66dceb9f355c2db4f01746db33984f1e3cf"
+  },
+  "package": {
+    "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-2026-08-03-git-01a25f74cc-full_build.7z",
+    "sha256": "8c32ed9800ff421bbcfda96beb0a66783a64a7cd98869b87ec1b494d3c855fcc"
+  },
+  "build": {
+    "origin": "gyan.dev git-full snapshot 2026-08-03; FFmpeg commit 01a25f74cc446a683318bab13dfd98a467082ef7",
+    "configuration": "--enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper",
+    "banner": "ffmpeg version 2026-08-03-git-01a25f74cc-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 16.1.0 (Rev2, Built by MSYS2 project)\nconfiguration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  7.100 / 63.  7.100\nlibavformat    63.  5.101 / 63.  5.101\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0"
+  },
+  "redistribution": {
+    "license": "GPL-3.0-or-later",
+    "corresponding_source": "Download and verify the exact FFmpeg source archive at source.url/source.sha256, then build commit 01a25f74cc446a683318bab13dfd98a467082ef7 with the recorded configuration. The Windows payload is the Gyan git-full package at package.url/package.sha256."
+  }
+}
