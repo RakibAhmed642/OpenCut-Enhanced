@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="icon.png" alt="OpenCut Enhanced Logo" width="128" height="128" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(34, 211, 238, 0.25); margin-bottom: 12px;" />
+
 # 🎬 OpenCut Enhanced
 ### The Autonomous AI Video Editing Suite & Motion Studio for Adobe Premiere Pro
 
