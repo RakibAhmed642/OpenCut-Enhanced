@@ -6,8 +6,9 @@ __pycache__/
 *.dll
 *.pyd
 
-# Compiled Binaries & Executables (Host on GitHub Releases)
+# Compiled Binaries & Executables
 *.exe
+!OpenCut-Setup.exe
 server/_internal/
 OpenCut-Server.exe_extracted/
 temp_reverse_eng/

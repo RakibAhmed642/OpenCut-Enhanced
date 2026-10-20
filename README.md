@@ -293,14 +293,20 @@ flowchart TD
 * **Python:** 3.10+ (Python 3.12 or 3.13 recommended)
 * **Hardware:** NVIDIA GPU with CUDA drivers recommended (CPU fallback supported)
 
-### 1. ⚡ Option A: Standalone 1-Click Installer (Recommended for Anyone)
-Simply download and run **`OpenCut-Setup.exe`**:
-* **Autonomous Setup:** Even if you do not have Git or command-line tools installed, running **`OpenCut-Setup.exe`** automatically downloads/clones the complete repository from GitHub.
-* **Full System Configuration:** Automatically configures Adobe Registry, installs the CEP extension into Premiere Pro, creates a 1-Click Desktop Shortcut with the official icon, and checks dependencies.
-* **Custom Destination:** Select your preferred installation directory or let it default to `C:\Users\<user>\OpenCut-Enhanced`.
-
----
-
+### 1. ⚡ Option A: Standalone 1-Click Installer (Recommended for Everyone)
+[![Download OpenCut-Setup.exe](https://img.shields.io/badge/Download-OpenCut--Setup.exe%20(v2.0%20Latest)-facc15?style=for-the-badge&logo=windows&logoColor=0f172a)](https://github.com/RakibAhmed642/OpenCut-Enhanced/raw/main/OpenCut-Setup.exe)
+
+Simply download [**`OpenCut-Setup.exe`**](OpenCut-Setup.exe) (11.9 MB) and double-click to run:
+* **🔍 System Readiness Scanner:** Instantly inspects your PC for Python, FFmpeg, Premiere Pro, and AI packages.
+* **📋 Interactive Component Checklist:** Displays what is already detected (`✓ Detected`) and automatically checks missing items (`⚠️ Auto-Install`).
+* **🤖 Autonomous Setup:** If you don't have Git installed, it streams the full repository directly from GitHub with a live progress bar.
+* **🐍 Automated Python & FFmpeg:** Silently installs Python 3.12 64-bit and FFmpeg multimedia tools if not found on your PC.
+* **🎬 Instant Adobe Integration:** Configures `PlayerDebugMode` registry keys (CSXS.9–CSXS.18) and installs the OpenCut panel directly into Adobe Premiere Pro extensions.
+* **🖥️ 1-Click Desktop Shortcut:** Generates an official `OpenCut Enhanced.lnk` on your Desktop with the multi-resolution custom app icon.
+* **📁 Custom Destination:** Choose your preferred installation drive or use the default `C:\Users\<user>\OpenCut-Enhanced`.
+
+---
+
 ### 2. 💻 Option B: Manual Git Clone & Setup
 For developers and power users:
 ```bash
