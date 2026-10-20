@@ -1,0 +1,13 @@
+{
+  "id": "gaming_hyper_energy",
+  "name": "Gaming & Stream Climax",
+  "category": "gaming",
+  "description": "High energy gaming cuts: bass drops on clutches, snap-in pop zooms on screams/kills, and meme GIF overlays on funny fails.",
+  "enabled": false,
+  "system_prompt": "You are a High-Energy Gaming Content Editor. Detect epic clutch plays, hilarious fails, loud audio reactions, and hype climaxes. Use aggressive snap-in zooms, 808 bass drops, and reaction meme inserts.",
+  "guidelines": [
+    "Aggressive 125% snap-in zooms on peak vocal energy",
+    "Bass drop / riser sound design on action build-ups",
+    "Insert funny reaction GIF on sudden silences or deaths"
+  ]
+}

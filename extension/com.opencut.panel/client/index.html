@@ -5418,6 +5418,48 @@
                             </label>
                         </div>
 
+                        <!-- Custom Backend System Prompt (User High Priority Directive) -->
+                        <div class="pro-field" style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                <label class="pro-label" for="aiCustomSystemPrompt" style="font-size: 11px; font-weight: 700; color: #38bdf8; margin: 0;">Custom Backend Agent Directive</label>
+                                <span style="font-size: 9.5px; color: #facc15; font-weight: 600;">Highest Priority ⚡</span>
+                            </div>
+                            <textarea id="aiCustomSystemPrompt" class="pro-input" rows="3" placeholder="Enter custom backend creative instructions (e.g., 'Always emphasize funny moments with a 1.25x zoom', 'Speak like a tech reviewer with sarcastic comments in hook badges', 'Cut ruthlessly at 20 seconds')..." style="font-size: 11px; width: 100%; box-sizing: border-box; resize: vertical; line-height: 1.4; padding: 6px 8px;"></textarea>
+                            <span style="font-size: 9.5px; color: #94a3b8; display: block; margin-top: 3px;">The AI Agent will prioritize your custom directive when planning YouTube Ready edits and Auto Reels.</span>
+                        </div>
+
+                        <!-- Autonomous Agent Skills Manager (Add & Toggle Skills) -->
+                        <div class="pro-field" style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div>
+                                    <span style="font-size: 11px; font-weight: 700; color: #f1f5f9;">Agent Skills Library</span>
+                                    <span style="font-size: 9.5px; color: #94a3b8; margin-left: 4px;">(Modular Editing Directives)</span>
+                                </div>
+                                <button type="button" class="btn btn-ghost btn-xs" id="aiAddSkillBtn" style="font-size: 10.5px; padding: 3px 8px; color: #38bdf8; border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: 4px; gap: 4px;">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    <span>+ Add Skill</span>
+                                </button>
+                            </div>
+
+                            <!-- Skills List Container -->
+                            <div id="aiSkillsListContainer" style="display: flex; flex-direction: column; gap: 6px;">
+                                <!-- Dynamic Skill Cards Injected Here -->
+                            </div>
+
+                            <!-- New Skill Input Form (Collapsible) -->
+                            <div id="aiNewSkillForm" class="hidden" style="margin-top: 8px; padding: 8px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-size: 10px; font-weight: 700; color: #38bdf8;">Create New Skill Directive</span>
+                                    <button type="button" class="btn-ghost" id="aiCancelSkillBtn" style="font-size: 10px; padding: 1px 6px; color: #94a3b8;">✕ Close</button>
+                                </div>
+                                <input type="text" id="aiNewSkillName" class="pro-input" placeholder="Skill Name (e.g. Cinematic Documentary Style)" style="font-size: 11px; padding: 4px 8px;">
+                                <textarea id="aiNewSkillPrompt" class="pro-input" rows="2" placeholder="System Prompt for this skill (e.g. Focus on slow camera pushes, dramatic pauses, and classical cinematic grading)..." style="font-size: 11px; padding: 4px 8px; resize: vertical;"></textarea>
+                                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                    <button type="button" class="btn btn-secondary btn-xs" id="aiSaveNewSkillBtn" style="font-size: 10.5px; padding: 4px 10px; background: #0284c7; color: white;">Save Skill</button>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
                             <button type="button" class="btn btn-secondary" id="aiVerifyKeyBtn" style="font-size: 11px; padding: 5px 12px; gap: 4px; height: 30px !important; min-height: 30px !important;">

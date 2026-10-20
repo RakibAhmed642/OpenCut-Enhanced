@@ -57,13 +57,16 @@ DEFAULT_AI_CONFIG = {
     "api_key": "",
     "model": "gemini-2.5-flash",
     "custom_endpoint": "",
+    "custom_system_prompt": "",
+    "temperature": 0.3,
     "target_platforms": ["reels", "tiktok", "shorts"],
     "features": {
         "autoreel": True,
         "autohook": True,
         "caption_polish": True,
         "social_metadata": True,
-        "assistant": True
+        "assistant": True,
+        "custom_skills": True
     }
 }
 

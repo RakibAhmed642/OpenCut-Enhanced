@@ -1,9 +1,11 @@
 {
-  "enabled": false,
+  "enabled": true,
   "provider": "gemini",
   "api_key": "AIzaSyCWmX5w_zVn9DiqdnqRmqJvr2kxYv499is",
   "model": "gemini-2.5-flash",
   "custom_endpoint": "",
+  "custom_system_prompt": "Always apply 1.22x dynamic zooms on punchy questions and add cyan hook badges.",
+  "temperature": 0.3,
   "target_platforms": [
     "reels",
     "tiktok",
@@ -12,8 +14,6 @@
   "features": {
     "autoreel": true,
     "autohook": true,
-    "caption_polish": true,
-    "social_metadata": true,
-    "assistant": false
+    "caption_polish": true
   }
 }

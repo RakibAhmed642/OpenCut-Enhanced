@@ -186,7 +186,15 @@ def plan_youtube_edit_ai(
                 "text": s.get("text", "")
             })
 
-        system_prompt = (
+        custom_prompt = ai_config.get("custom_system_prompt", "") if ai_config else ""
+        skills_prompt = ""
+        try:
+            from agent_skills_service import get_combined_agent_prompt
+            skills_prompt = get_combined_agent_prompt(custom_override_prompt=custom_prompt)
+        except Exception:
+            pass
+
+        base_system_prompt = (
             "You are an Elite YouTube Video Editor and Creative Director. "
             "Your job is to read raw footage transcript and timestamps, then output an autonomous, high-retention "
             "video edit blueprint for YouTube.\n\n"
@@ -216,6 +224,8 @@ def plan_youtube_edit_ai(
             "- highlight_keywords should be energetic, high-impact words found in the speech.\n"
             "- All times must be within 0.0 and total_duration."
         )
+
+        system_prompt = f"{skills_prompt}\n\n{base_system_prompt}" if skills_prompt else base_system_prompt
 
         user_prompt = (
             f"Total Duration: {round(total_duration, 2)}s\n"

@@ -14070,6 +14070,14 @@
         var toggleCaptionPolish = document.getElementById("aiToggleCaptionPolish");
         var toggleSocialMetadata = document.getElementById("aiToggleSocialMetadata");
         var toggleAssistant = document.getElementById("aiToggleAssistant");
+        var customSystemPromptInput = document.getElementById("aiCustomSystemPrompt");
+        var skillsContainer = document.getElementById("aiSkillsListContainer");
+        var addSkillBtn = document.getElementById("aiAddSkillBtn");
+        var newSkillForm = document.getElementById("aiNewSkillForm");
+        var cancelSkillBtn = document.getElementById("aiCancelSkillBtn");
+        var saveNewSkillBtn = document.getElementById("aiSaveNewSkillBtn");
+        var newSkillName = document.getElementById("aiNewSkillName");
+        var newSkillPrompt = document.getElementById("aiNewSkillPrompt");
 
         var defaultModels = {
             gemini: "gemini-2.5-flash",
@@ -14108,6 +14116,8 @@
                 syncModelPresetUI(cfg.model);
             }
             if (customEndpointInput && cfg.custom_endpoint) customEndpointInput.value = cfg.custom_endpoint;
+            if (customSystemPromptInput && cfg.custom_system_prompt) customSystemPromptInput.value = cfg.custom_system_prompt;
+            loadAgentSkillsUI();
             if (customEndpointField) {
                 if (cfg.provider === "custom") customEndpointField.classList.remove("hidden");
                 else customEndpointField.classList.add("hidden");
@@ -14251,11 +14261,13 @@
                 saveBtn.disabled = true;
                 saveBtn.innerHTML = "<span>Saving…</span>";
 
+                var customPrompt = customSystemPromptInput ? customSystemPromptInput.value.trim() : "";
                 var payload = {
                     enabled: enabled,
                     provider: prov,
                     model: mod,
                     custom_endpoint: endpoint,
+                    custom_system_prompt: customPrompt,
                     features: features
                 };
                 if (key) payload.api_key = key;
@@ -14276,6 +14288,7 @@
                         window._aiConfig.provider = prov;
                         window._aiConfig.model = mod;
                         window._aiConfig.custom_endpoint = endpoint;
+                        window._aiConfig.custom_system_prompt = customPrompt;
                         window._aiConfig.features = features;
                         if (key) window._aiConfig.has_key = true;
                         if (statusPill) {
@@ -14303,6 +14316,139 @@
                 });
             };
         }
+    }
+
+    // ================================================================
+    // Agent Skills & Directives UI Manager
+    // ================================================================
+    function loadAgentSkillsUI() {
+        var container = document.getElementById("aiSkillsListContainer");
+        if (!container) return;
+
+        fetch("http://127.0.0.1:5682/system/skills").then(function (r) {
+            return r.json();
+        }).then(function (res) {
+            if (!res || !res.skills) return;
+            container.innerHTML = "";
+            res.skills.forEach(function (sk) {
+                var card = document.createElement("div");
+                card.style.cssText = "display: flex; justify-content: space-between; align-items: flex-start; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 7px 10px;";
+
+                var left = document.createElement("div");
+                left.style.cssText = "flex: 1; min-width: 0; padding-right: 8px;";
+                left.innerHTML = "<div style="font-size: 11px; font-weight: 600; color: #f1f5f9; display: flex; align-items: center; gap: 6px;">" +
+                    "<span>" + (sk.name || "Custom Skill") + "</span>" +
+                    (sk.category ? "<span style="font-size: 8.5px; padding: 1px 5px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; text-transform: uppercase;">" + sk.category + "</span>" : "") +
+                    "</div>" +
+                    "<div style="font-size: 10px; color: #94a3b8; margin-top: 2px; line-height: 1.3;">" + (sk.description || (sk.system_prompt ? sk.system_prompt.slice(0, 100) + "..." : "")) + "</div>";
+
+                var right = document.createElement("div");
+                right.style.cssText = "display: flex; align-items: center; gap: 6px;";
+
+                var toggle = document.createElement("input");
+                toggle.type = "checkbox";
+                toggle.checked = !!sk.enabled;
+                toggle.style.accentColor = "#0284c7";
+                toggle.title = "Toggle this skill directive";
+                toggle.onchange = function () {
+                    sk.enabled = toggle.checked;
+                    fetch("http://127.0.0.1:5682/system/skills/save", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(sk)
+                    }).then(function () {
+                        showToast("Skill '" + sk.name + "' " + (sk.enabled ? "enabled" : "disabled"), "info");
+                    });
+                };
+
+                right.appendChild(toggle);
+
+                // Delete button for user custom skills
+                if (sk.id && !sk.id.startsWith("youtube_retention") && !sk.id.startsWith("viral_reels")) {
+                    var delBtn = document.createElement("button");
+                    delBtn.type = "button";
+                    delBtn.innerHTML = "✕";
+                    delBtn.title = "Delete Skill";
+                    delBtn.style.cssText = "background: none; border: none; color: #ef4444; font-size: 11px; cursor: pointer; padding: 0 4px;";
+                    delBtn.onclick = function () {
+                        if (confirm("Delete skill '" + sk.name + "'?")) {
+                            fetch("http://127.0.0.1:5682/system/skills/delete", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: sk.id })
+                            }).then(function () {
+                                loadAgentSkillsUI();
+                                showToast("Skill deleted", "info");
+                            });
+                        }
+                    };
+                    right.appendChild(delBtn);
+                }
+
+                card.appendChild(left);
+                card.appendChild(right);
+                container.appendChild(card);
+            });
+        }).catch(function (e) {
+            console.warn("Failed loading skills:", e);
+        });
+    }
+
+    // Bind Add Skill events
+    var addSkillBtnEl = document.getElementById("aiAddSkillBtn");
+    var newSkillFormEl = document.getElementById("aiNewSkillForm");
+    var cancelSkillBtnEl = document.getElementById("aiCancelSkillBtn");
+    var saveNewSkillBtnEl = document.getElementById("aiSaveNewSkillBtn");
+
+    if (addSkillBtnEl && newSkillFormEl) {
+        addSkillBtnEl.onclick = function () {
+            newSkillFormEl.classList.remove("hidden");
+        };
+    }
+    if (cancelSkillBtnEl && newSkillFormEl) {
+        cancelSkillBtnEl.onclick = function () {
+            newSkillFormEl.classList.add("hidden");
+        };
+    }
+    if (saveNewSkillBtnEl) {
+        saveNewSkillBtnEl.onclick = function () {
+            var nameIn = document.getElementById("aiNewSkillName");
+            var promptIn = document.getElementById("aiNewSkillPrompt");
+            var nameVal = nameIn ? nameIn.value.trim() : "";
+            var promptVal = promptIn ? promptIn.value.trim() : "";
+
+            if (!nameVal || !promptVal) {
+                showToast("Please enter both Skill Name and System Prompt.", "warning");
+                return;
+            }
+
+            var newSkillObj = {
+                name: nameVal,
+                category: "custom",
+                description: promptVal.slice(0, 110) + "...",
+                enabled: true,
+                system_prompt: promptVal,
+                guidelines: []
+            };
+
+            fetch("http://127.0.0.1:5682/system/skills/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newSkillObj)
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                if (res && res.status === "success") {
+                    showToast("Custom Skill added and activated!", "success");
+                    if (nameIn) nameIn.value = "";
+                    if (promptIn) promptIn.value = "";
+                    if (newSkillFormEl) newSkillFormEl.classList.add("hidden");
+                    loadAgentSkillsUI();
+                } else {
+                    showToast("Error saving skill", "error");
+                }
+            }).catch(function (err) {
+                showToast("Error saving skill: " + err.message, "error");
+            });
+        };
     }
 
     // ================================================================
