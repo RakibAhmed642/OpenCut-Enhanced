@@ -73,6 +73,18 @@ Creators maintain 100% authority over what the AI agent can auto-insert:
 * `[✓] Auto Reaction GIFs` — Inserts viral reaction memes at punchlines.
 * `[✓] Auto Motion Cards` — Displays animated title badges and subscribe callouts.
 
+### ⚡ User-Prioritized AI Agent Settings & Skills:
+Creators hold absolute authority over the agent's creative direction via the Settings tab:
+* **Custom Backend Agent Directive (Highest Priority ⚡):**
+  * Pass direct natural language instructions (e.g. *"Emphasize humorous remarks with 1.25x camera snaps"*, *"Use sarcastic tech reviewer hook titles"*, *"Aggressively cut under 25s"*).
+  * The AI Agent injects this prompt with top priority over default rules.
+* **Modular Agent Skills Library (`E:\autocut\skills`):**
+  * **YouTube Retention Master:** Pacing, hook cards, subscribe callouts, punch-in zooms.
+  * **Viral TikTok & Reels Specialist:** 9:16 vertical hook detection, dynamic progress bar, reaction memes.
+  * **Clean Educational & Coding Guide:** Subtle 1.12x zooms, minimal sound design, boxed high-contrast captions.
+  * **Gaming & Stream Climax:** 808 bass drops, snap-in pop zooms, and clutch reaction overlays.
+  * **`+ Add Skill` Creator:** Easily create, activate, toggle, or delete custom skill files right from the UI.
+
 ---
 
 ## 🎁 Free Open Media & SFX Studio
@@ -218,7 +230,11 @@ OpenCut Enhanced is organized into 6 powerful dedicated suites:
 
 ---
 
-### 6. 🧠 Search & AI Moment Intelligence
+### 6. 🧠 Search, AI Agent Settings & Moment Intelligence
+* **Custom Backend Directive Prompt (Highest Priority):**
+  * Dedicated creative directive box in Settings; overrides or steers how the AI edits footage, designs hooks, and places zooms.
+* **Modular Agent Skills Manager (`skills/*.json`):**
+  * Toggle pre-built or custom editor personas (Retention Master, Viral Reels, Educational, Gaming) or add new custom skills on the fly.
 * **Multi-LLM Integration:**
   * Connects with **Google Gemini, OpenAI, Anthropic Claude, OpenRouter, and Groq**.
   * Analyzes complete transcripts to score hook strength, narrative retention, and comedy beats.
