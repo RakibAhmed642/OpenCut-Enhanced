@@ -10,9 +10,9 @@
 [![Accelerated with CUDA](https://img.shields.io/badge/CUDA-Hardware%20Accelerated-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-zone)
 [![Whisper AI](https://img.shields.io/badge/Whisper-Large--v3%20%7C%20Turbo-blueviolet?logo=openai&logoColor=white)](https://github.com/openai/whisper)
 
-**OpenCut Enhanced** is a comprehensive, production-grade AI video editing engine and Premiere Pro CEP extension. It transforms raw, unedited footage into high-retention, studio-quality videos and viral 9:16 Shorts/Reels with dead-air trimming, intelligent sound design, multi-LLM moment extraction, beat-synced cuts, and multilingual kinetic karaoke captions.
+**OpenCut Enhanced** is an autonomous, production-grade AI video editing engine and Premiere Pro CEP extension. It transforms raw, unedited footage into high-retention, studio-quality videos and viral 9:16 Shorts/Reels with dead-air trimming, intelligent sound design, multi-LLM moment extraction, beat-synced cuts, free stock media integration, and multilingual kinetic karaoke captions.
 
-[Features Overview](#-complete-features-breakdown) • [System Architecture](#-system-architecture) • [Quick Start](#-quick-start--installation) • [Configuration](#-configuration-configyaml) • [License](#-license--attribution)
+[Features Overview](#-complete-features-breakdown) • [YouTube AI Agent](#-autonomous-youtube-ai-editor-agent) • [Free Media Studio](#-free-open-media--sfx-studio) • [System Architecture](#-system-architecture) • [Quick Start](#-quick-start--installation) • [Configuration](#-configuration-configyaml) • [License](#-license--attribution)
 
 ---
 
@@ -22,12 +22,98 @@
 
 OpenCut Enhanced significantly upgrades the original OpenCut foundation into a complete autonomous production studio:
 
-1. **⚡ Fully Autonomous Workflow:** From raw footage $\rightarrow$ dead-air removal $\rightarrow$ hook creation $\rightarrow$ viral 9:16 reel generation $\rightarrow$ sound effects $\rightarrow$ animated captions, completed in seconds.
-2. **📱 Native 9:16 Auto-Reels & Hooks:** Automatic speaker centering, dynamic pacing, viral hook assemblage, and one-click insertion directly into your active Premiere Pro timeline.
-3. **🎧 Content-Aware Sound Design:** Auto-detects cuts and motion to generate isolated SFX stems (*whooshes, risers, impacts, clicks*) with automatic audio ducking.
-4. **🌐 Global Multilingual & Bengali Support:** Native transcription and kinetic subtitle rendering in Bengali/Bangla (`Kalpurush` font fallback), English, and 30+ languages.
-5. **🛡️ 100% CUDA Crash Shield:** Custom PyTorch-independent GPU activation allowing Faster-Whisper, CTranslate2, and FFmpeg to leverage full NVIDIA hardware acceleration without crashing.
-6. **🎨 Sleek, Modern Minimal UI/UX:** Completely redesigned, distraction-free Premiere Pro CEP panel with fixed z-index layering, clean card layouts, and intuitive controls.
+1. **🤖 Autonomous YouTube AI Editor Agent:** 1-click end-to-end editorial pipeline that analyzes speech, cuts dead-air, applies camera punch-in zooms, generates kinetic motion graphics & subtitles, masters audio, and builds a clean 6-track Premiere Pro timeline.
+2. **🎁 Free Open Media & SFX Studio:** Built-in browser for 100% free, CC0, and royalty-free B-roll videos (Wikimedia Commons), 25+ studio-grade SFX, and viral reaction meme GIFs with direct 1-click timeline insertion. Zero GPU required!
+3. **🧠 Contextual AI Media Matching with User Controls:** AI automatically analyzes spoken dialogue and inserts matching B-roll and reaction memes at the exact timestamps, while giving the creator granular toggle permissions over videos, SFX, GIFs, and motion cards.
+4. **📱 Native 9:16 Auto-Reels & Hooks:** Automatic speaker centering, dynamic pacing, viral hook assemblage, and one-click insertion directly into your active Premiere Pro timeline.
+5. **🎧 Content-Aware Sound Design:** Auto-detects cuts and motion to generate isolated SFX stems (*whooshes, risers, impacts, clicks*) with automatic audio ducking.
+6. **🌐 Global Multilingual & Bengali Support:** Native transcription and kinetic subtitle rendering in Bengali/Bangla (`Kalpurush` font fallback), English, and 30+ languages.
+7. **🛡️ 100% CUDA Crash Shield:** Custom PyTorch-independent GPU activation allowing Faster-Whisper, CTranslate2, and FFmpeg to leverage full NVIDIA hardware acceleration without crashing.
+8. **🎨 Sleek, Modern Minimal UI/UX:** Completely redesigned, distraction-free Premiere Pro CEP panel with fixed z-index layering, clean card layouts, and intuitive controls.
+
+---
+
+## 🤖 Autonomous YouTube AI Editor Agent
+
+Triggered with one click on **"YouTube Ready"**, OpenCut activates an autonomous creative editor agent that processes raw footage into a publication-ready multi-track sequence:
+
+```
+[Raw Video Footage]
+       │
+       ▼
+[1. Deep Sequence Ingestion]
+   • 16kHz audio extraction + Faster-Whisper word-by-word timestamps
+   • Sub-millisecond silence & dead-air interval detection
+       │
+       ▼
+[2. AI Editorial Blueprinting (Gemini 2.5 Flash / Multi-LLM)]
+   • Analyzes full narrative cadence, energy peaks, and topic transitions
+   • Generates structured blueprint: Hook title, punch-in zoom timestamps, motion cards, and SFX cues
+   • Resilient fallback: Seamlessly uses heuristic intelligence if offline or API quota is reached
+       │
+       ▼
+[3. Multi-Track Rendering & Audio Mastering]
+   • Track V1: Master cuts + 1.18x dynamic punch-in zooms on vocal emphasis
+   • Track V2: Glassmorphic motion graphics (Intro Hook Card + Animated "Subscribe & Bell" Lower Third)
+   • Track V3: Word-synced kinetic subtitles (.srt / .ass) with vibrant cyan/yellow keyword highlights
+   • Track A1: Clean dialogue mastered to YouTube broadcast standard EBU R128 (-16.0 LUFS)
+   • Track A2: Content-aware synchronized SFX stem (whooshes on zooms, impacts on hooks, pops on cards)
+   • Track A3: Ambient background music bed with dynamic auto-ducking (-18dB under speech)
+       │
+       ▼
+[4. In-Place Premiere Pro Timeline Assembly]
+   • Overwrites clips cleanly onto Tracks V1, V2, V3, A1, A2, A3 aligned to 0:00
+   • Adds timeline zoom markers and resets playhead to 0:00 for instant creator review!
+```
+
+### Granular AI Media Permission Controls:
+Creators maintain 100% authority over what the AI agent can auto-insert:
+* `[✓] Auto B-Roll Videos` — AI queries free footage matching the spoken context.
+* `[✓] Auto Sound SFX` — Aligns whooshes, impacts, and pops with cuts and zooms.
+* `[✓] Auto Reaction GIFs` — Inserts viral reaction memes at punchlines.
+* `[✓] Auto Motion Cards` — Displays animated title badges and subscribe callouts.
+
+---
+
+## 🎁 Free Open Media & SFX Studio
+
+OpenCut Enhanced includes a dedicated **Free Stock Media & SFX Browser** embedded directly inside the Premiere Pro panel. No expensive subscriptions or GPU compute required:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  🎁 Free Open Media & SFX Studio (100% Free & CC0 Royalty-Free)       │
+├────────────────────────────────────────────────────────────────────────┤
+│  [🎬 Video B-Roll]       [🔊 Sound SFX]       [🎭 GIFs & Memes]        │
+├────────────────────────────────────────────────────────────────────────┤
+│  🔍 Search: [ drone, cyberpunk, whoosh, excited...          ] [Search] │
+│  🏷️ Pills:  [All] [Cinematic] [Tech] [Nature] [Urban] [Whoosh] [Impact]│
+├────────────────────────────────────────────────────────────────────────┤
+│  ⚙️ Timeline Placement Controls (User Customizable):                  │
+│  • Target Track:     [ V2 (Overlay / B-Roll) ▼ ]  (V1, V2, V3, A1, A2, A3)│
+│  • Placement Time:   [ At Current Playhead   ▼ ]  (Playhead, 0:00, End)│
+├────────────────────────────────────────────────────────────────────────┤
+│  📦 Results Grid:                                                      │
+│  ┌───────────────────────┐         ┌───────────────────────┐          │
+│  │ [Thumbnail / Preview] │         │ [Thumbnail / Preview] │          │
+│  │ Drone Ocean Waves     │         │ Cyberpunk Matrix Code │          │
+│  │ Nature · CC0 Free     │         │ Tech · CC0 Free       │          │
+│  │ [▶ Preview] [+ Insert]│         │ [▶ Preview] [+ Insert]│          │
+│  └───────────────────────┘         └───────────────────────┘          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Media Catalogs:
+* **🎬 Video B-Roll:**
+  * Direct integration with **Wikimedia Commons Open Video Search** (100% public domain & CC-BY videos, zero API keys required).
+  * Curated 4K/HD loops: *Cinematic Drone, Nature Cascades, Cyberpunk Code, City Life, Space*.
+* **🔊 Sound SFX (25+ Studio-Grade Audio Assets):**
+  * Built-in CC0 sound library: *Whoosh Fast, Whoosh Soft, Impact 808, Sub Drop, Pop Snap, UI Click, Notification Bell, Trailer Braam, Record Scratch*.
+  * DSP-synthesized audio normalized with true-peak limiting.
+* **🎭 GIFs & Reaction Memes:**
+  * Viral creator reaction clips: *Mind Blown, DiCaprio Gatsby Cheers, Popcat, Slow Clap Applause, Confused Math, Picard Facepalm*.
+* **⚡ Automatic Transcoding & 1-Click Timeline Placement:**
+  * Downloads remote media and losslessly converts `.webm` and animated `.gif` into pristine H.264 `.mp4` using bundled FFmpeg.
+  * User selects **Target Track** (V1, V2, V3, A1, A2, A3) and **Placement Position** (Playhead, Sequence Start, Sequence End).
 
 ---
 
@@ -92,6 +178,8 @@ OpenCut Enhanced is organized into 6 powerful dedicated suites:
 ---
 
 ### 4. 🎥 Video Tools Suite
+* **Free Stock Media & SFX Browser:**
+  * Integrated panel to search, preview, and insert B-roll, SFX, and GIFs into Premiere Pro.
 * **AI Auto-Reframe:**
   * Intelligent face tracking that keeps subjects centered during 16:9 to 9:16 portrait, 1:1 square, or 4:5 social crops.
 * **AI Face Blur & Privacy Shield:**
@@ -131,31 +219,35 @@ flowchart TD
     subgraph PremierePro ["Adobe Premiere Pro CC (Host Environment)"]
         CEP["OpenCut Enhanced CEP Panel (HTML5 / JS / CSS)"]
         JSX["ExtendScript Host Bridge (index.jsx)"]
-        Timeline["Premiere Pro Active Sequence & Timeline"]
+        Timeline["Premiere Pro Multi-Track Timeline (V1-V3, A1-A3)"]
     end
 
     subgraph LocalServers ["Local Daemon Services"]
         BackendServer["OpenCut Core Server (Port 5679)"]
-        SoundService["AI Studio & Sound Designer (Port 5682)"]
+        SoundService["AI Studio & Media Service (Port 5682)"]
     end
 
-    subgraph ProcessingCore ["Autonomous AI Engines"]
+    subgraph ProcessingCore ["Autonomous AI & Media Engines"]
+        YTAgent["YouTube Ready AI Agent (youtube_agent_engine.py)"]
+        MediaService["Free Open Media Engine (free_media_service.py)"]
         WhisperEngine["Faster-Whisper (Large-v3 / Turbo)"]
         SoundEngine["BPT Sound Designer & Ducking Engine"]
         AutoReels["Auto-Reels & Hook Assembler (9:16)"]
         FFmpegBin["Bundled FFmpeg & Filter Complex"]
-        LLMHub["AI API Bridge (Gemini / OpenAI / Groq)"]
+        LLMHub["AI API Bridge (Gemini / OpenAI / Claude)"]
     end
 
     CEP <-->|REST API + CSRF| BackendServer
     CEP <-->|REST API| SoundService
     CEP <-->|CSInterface EvalScript| JSX
     JSX <-->|DOM Manipulation| Timeline
-    BackendServer --> WhisperEngine
-    BackendServer --> FFmpegBin
+    SoundService --> YTAgent
+    SoundService --> MediaService
     SoundService --> SoundEngine
     SoundService --> AutoReels
     SoundService --> LLMHub
+    BackendServer --> WhisperEngine
+    BackendServer --> FFmpegBin
 ```
 
 ---
@@ -184,7 +276,9 @@ cd OpenCut-Enhanced
    python sync_extension.py
    ```
 3. Launch Adobe Premiere Pro, then navigate to:  
-   **Window** $\rightarrow$ **Extensions** $\rightarrow$ **OpenCut**.
+   **Window** $\\rightarrow$
+ightarrow$\\rightarrow$ **Extensions** $\\rightarrow$
+ightarrow$\\rightarrow$ **OpenCut**.
 
 ### 3. Start Local Services
 Launch both local daemons with a single click:
