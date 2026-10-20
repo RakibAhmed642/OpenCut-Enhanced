@@ -3140,6 +3140,7 @@
                     <button type="button" class="sub-tab" data-sub="vid-watermark" data-i18n="subtabs.watermark">Watermark</button>
                     <button type="button" class="sub-tab" data-sub="vid-remove" data-i18n="subtabs.de_logo">De-Logo</button>
                     <button type="button" class="sub-tab" data-sub="vid-depth" data-i18n="subtabs.depth_fx">Depth FX</button>
+                    <button type="button" class="sub-tab" data-sub="vid-stockmedia" id="subTabStockMedia" style="background: rgba(34, 211, 238, 0.15); color: #22d3ee; border: 1px solid rgba(34, 211, 238, 0.35); font-weight: 700;">🎁 Free Media & SFX</button>
                     <button type="button" class="sub-tab" data-sub="vid-brollgen" data-i18n="subtabs.ai_broll">AI B-Roll</button>
                     <button type="button" class="sub-tab" data-sub="vid-multimodal" data-i18n="subtabs.diarize">Diarize+</button>
                     <button type="button" class="sub-tab" data-sub="vid-social" data-i18n="subtabs.social_post">Social Post</button>
@@ -3625,6 +3626,98 @@
                 </div>
 
                 <!-- AI B-ROLL GENERATION -->
+                
+                <!-- FREE OPEN MEDIA & SFX STUDIO -->
+                <div class="sub-panel" id="sub-vid-stockmedia">
+                    <section class="card pro-card" style="border: 1px solid rgba(34, 211, 238, 0.25); background: linear-gradient(180deg, rgba(11, 15, 25, 0.95), rgba(7, 10, 18, 0.98));">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 10px; margin-bottom: 12px;">
+                            <div class="card-title-group">
+                                <div class="card-title" style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: #22d3ee;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+                                    <span>Free Open Media & SFX Studio</span>
+                                </div>
+                                <div class="card-subtitle" style="font-size: 10.5px; color: #94a3b8;">100% Free &amp; Open to Everyone · Zero GPU Required</div>
+                            </div>
+                            <span class="pro-badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">CC0 / Royalty-Free</span>
+                        </div>
+
+                        <!-- 1. Media Type Selector Pills -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                            <button type="button" class="btn-xs pro-btn-primary" id="stockTypeVideoBtn" style="height: 28px; font-size: 11px; font-weight: 700; border-radius: 6px;">
+                                🎬 Video B-Roll
+                            </button>
+                            <button type="button" class="btn-xs pro-btn-secondary" id="stockTypeSfxBtn" style="height: 28px; font-size: 11px; font-weight: 700; border-radius: 6px;">
+                                🔊 Sound SFX
+                            </button>
+                            <button type="button" class="btn-xs pro-btn-secondary" id="stockTypeGifBtn" style="height: 28px; font-size: 11px; font-weight: 700; border-radius: 6px;">
+                                🎭 GIFs & Memes
+                            </button>
+                        </div>
+
+                        <!-- 2. Search Bar & Quick Categories -->
+                        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                            <input type="text" id="stockSearchInput" class="text-input" placeholder="Search free drone, cyberpunk, coding footage..." style="flex: 1; height: 32px; font-size: 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; padding: 0 10px; color: #f8fafc;">
+                            <button type="button" id="stockSearchBtn" class="btn-primary pro-btn-primary btn-sm" style="padding: 0 12px; height: 32px; font-weight: 700;">
+                                <span>Search</span>
+                            </button>
+                        </div>
+
+                        <!-- Category Filter Pills -->
+                        <div id="stockCategoryPills" style="display: flex; gap: 5px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; scrollbar-width: none;">
+                            <button type="button" class="pro-badge stock-cat-pill active" data-cat="" style="cursor: pointer; background: rgba(34, 211, 238, 0.25); color: #22d3ee; border: 1px solid #22d3ee;">All</button>
+                            <button type="button" class="pro-badge stock-cat-pill" data-cat="Cinematic" style="cursor: pointer;">Cinematic</button>
+                            <button type="button" class="pro-badge stock-cat-pill" data-cat="Tech" style="cursor: pointer;">Tech / Code</button>
+                            <button type="button" class="pro-badge stock-cat-pill" data-cat="Nature" style="cursor: pointer;">Nature / Drone</button>
+                            <button type="button" class="pro-badge stock-cat-pill" data-cat="Urban" style="cursor: pointer;">Urban</button>
+                            <button type="button" class="pro-badge stock-cat-pill" data-cat="Abstract" style="cursor: pointer;">Abstract</button>
+                        </div>
+
+                        <!-- 3. User Controls Bar (Target Track, Placement Mode, Volume) -->
+                        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-size: 10.5px; font-weight: 800; color: #facc15; text-transform: uppercase; letter-spacing: 0.05em;">Timeline Placement Controls</span>
+                                <span style="font-size: 9.5px; color: #94a3b8;">Customizable</span>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="stockTargetTrack" style="font-size: 10px; color: #94a3b8;">Target Track</label>
+                                    <select id="stockTargetTrack" style="height: 26px; font-size: 11px; width: 100%; border-radius: 4px; background: #0b0f19; color: #f1f5f9; border-color: rgba(255,255,255,0.15);">
+                                        <option value="video:1" selected>V2 (Overlay / B-Roll)</option>
+                                        <option value="video:0">V1 (Main Cut Track)</option>
+                                        <option value="video:2">V3 (Top Graphics)</option>
+                                        <option value="audio:1">A2 (SFX Track)</option>
+                                        <option value="audio:2">A3 (Background Bed)</option>
+                                        <option value="audio:0">A1 (Master Audio)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="stockPositionMode" style="font-size: 10px; color: #94a3b8;">Placement Position</label>
+                                    <select id="stockPositionMode" style="height: 26px; font-size: 11px; width: 100%; border-radius: 4px; background: #0b0f19; color: #f1f5f9; border-color: rgba(255,255,255,0.15);">
+                                        <option value="playhead" selected>At Current Playhead</option>
+                                        <option value="start">At Sequence Start (0:00)</option>
+                                        <option value="end">At End of Sequence</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4. Asset Results Grid -->
+                        <div id="stockMediaStatus" style="font-size: 11px; color: #94a3b8; margin-bottom: 8px; display: flex; justify-content: space-between;">
+                            <span id="stockMediaCount">Showing free assets...</span>
+                            <span id="stockMediaLoader" class="hidden" style="color: #22d3ee;">Loading...</span>
+                        </div>
+
+                        <div id="stockMediaGrid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 480px; overflow-y: auto; padding-right: 4px;">
+                            <!-- Dynamically populated cards -->
+                        </div>
+
+                        <!-- Hidden Audio Preview Player -->
+                        <audio id="stockAudioPlayer" style="display: none;"></audio>
+                    </section>
+                </div>
+
                 <div class="sub-panel" id="sub-vid-brollgen">
                     <section class="card">
                         <p class="card-desc" data-i18n="video.broll_desc">Generate B-roll clips from text prompts using AI.</p>

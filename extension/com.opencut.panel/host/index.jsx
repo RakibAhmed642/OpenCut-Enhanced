@@ -2431,6 +2431,162 @@ function importMultiTrackToTimeline(configJson) {
     });
 }
 
+
+/**
+ * Inserts a downloaded or local stock video, SFX audio, or GIF into the active Premiere Pro sequence.
+ * Gives the user full control over track, placement time (playhead / start / end), and volume.
+ *
+ * @param {string} configJson - JSON { filepath, trackType, trackIndex, positionMode, explicitSeconds, volume }
+ * @returns {string} JSON string status
+ */
+function insertMediaToTimeline(configJson) {
+    _ocLog("insertMediaToTimeline: " + configJson);
+
+    if (!app || !app.project) {
+        return JSON.stringify({ error: "No Premiere Pro project open" });
+    }
+
+    var cfg = {};
+    try {
+        cfg = typeof configJson === "string" ? JSON.parse(configJson) : configJson;
+    } catch (e) {
+        return JSON.stringify({ error: "Invalid JSON config: " + e.toString() });
+    }
+
+    var filePath = cfg.filepath || cfg.filePath;
+    if (!filePath) {
+        return JSON.stringify({ error: "Missing filepath parameter" });
+    }
+
+    var cleanPath = String(filePath).replace(/\\/g, "/");
+    var mFile = new File(cleanPath);
+    if (!mFile.exists) mFile = new File(filePath);
+    if (!mFile.exists) {
+        return JSON.stringify({ error: "Media file not found on disk: " + filePath });
+    }
+
+    var seq = app.project.activeSequence;
+    if (!seq) {
+        return JSON.stringify({ error: "No active sequence found in Premiere Pro" });
+    }
+
+    var targetBin = _findOrCreateBin("OpenCut Free Media");
+    if (!targetBin) targetBin = app.project.rootItem;
+
+    // Locate or import item
+    var pItem = _findProjectItemByPath(app.project.rootItem, mFile.fsName, 0);
+    if (!pItem) {
+        pItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+    }
+    if (!pItem) {
+        try {
+            app.project.importFiles([mFile.fsName], false, targetBin, false);
+            pItem = _findProjectItemByPath(app.project.rootItem, mFile.fsName, 0);
+            if (!pItem) {
+                pItem = _findProjectItemByPath(app.project.rootItem, cleanPath, 0);
+            }
+        } catch (e) {
+            _ocLog("importFiles error: " + e.toString());
+        }
+    }
+
+    if (!pItem && targetBin && targetBin.children) {
+        var baseName = mFile.name;
+        for (var b = 0; b < targetBin.children.numItems; b++) {
+            var cItem = targetBin.children[b];
+            if (cItem && cItem.name === baseName) {
+                pItem = cItem;
+                break;
+            }
+        }
+    }
+
+    if (!pItem) {
+        return JSON.stringify({ error: "Could not import media file into Premiere Pro" });
+    }
+
+    // Determine target time
+    var targetTime = new Time();
+    targetTime.ticks = "0";
+
+    var posMode = cfg.positionMode || "playhead";
+    if (posMode === "playhead") {
+        try {
+            if (typeof seq.getPlayerPosition === "function") {
+                targetTime = seq.getPlayerPosition();
+            }
+        } catch (pe) {}
+    } else if (posMode === "start") {
+        targetTime.ticks = "0";
+    } else if (posMode === "end") {
+        try {
+            if (seq.end) {
+                targetTime.ticks = seq.end;
+            }
+        } catch (ee) {}
+    } else if (typeof cfg.explicitSeconds === "number") {
+        targetTime.seconds = cfg.explicitSeconds;
+    }
+
+    var trackType = (cfg.trackType || "video").toLowerCase();
+    var trackIdx = typeof cfg.trackIndex === "number" ? cfg.trackIndex : (trackType === "audio" ? 1 : 1);
+
+    var placed = false;
+    if (trackType === "video" && seq.videoTracks && seq.videoTracks.numTracks > 0) {
+        if (trackIdx >= seq.videoTracks.numTracks) trackIdx = seq.videoTracks.numTracks - 1;
+        var vTrack = seq.videoTracks[trackIdx];
+        try {
+            vTrack.overwriteClip(pItem, targetTime);
+            placed = true;
+        } catch (voErr) {
+            try {
+                vTrack.insertClip(pItem, targetTime);
+                placed = true;
+            } catch (viErr) {
+                _ocLog("Video track placement error: " + viErr.toString());
+            }
+        }
+    } else if (trackType === "audio" && seq.audioTracks && seq.audioTracks.numTracks > 0) {
+        if (trackIdx >= seq.audioTracks.numTracks) trackIdx = seq.audioTracks.numTracks - 1;
+        var aTrack = seq.audioTracks[trackIdx];
+        try {
+            aTrack.overwriteClip(pItem, targetTime);
+            placed = true;
+        } catch (aoErr) {
+            try {
+                aTrack.insertClip(pItem, targetTime);
+                placed = true;
+            } catch (aiErr) {
+                _ocLog("Audio track placement error: " + aiErr.toString());
+            }
+        }
+    }
+
+    if (!placed) {
+        try {
+            if (trackType === "video" && seq.videoTracks && seq.videoTracks.numTracks > 0) {
+                seq.videoTracks[0].overwriteClip(pItem, targetTime);
+                placed = true;
+            } else if (seq.audioTracks && seq.audioTracks.numTracks > 0) {
+                seq.audioTracks[0].overwriteClip(pItem, targetTime);
+                placed = true;
+            }
+        } catch (fallErr) {
+            return JSON.stringify({ error: "Failed to place clip on timeline: " + fallErr.toString() });
+        }
+    }
+
+    return JSON.stringify({
+        success: true,
+        sequence: seq.name,
+        mediaName: pItem.name,
+        trackType: trackType,
+        trackIndex: trackIdx,
+        insertedTime: targetTime ? targetTime.seconds : 0,
+        message: "Media placed on timeline successfully!"
+    });
+}
+
 /**
  * Inserts a specific in/out range of a video clip into the active sequence at the playhead or end of track.
  *

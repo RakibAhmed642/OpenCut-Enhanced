@@ -132,6 +132,28 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self._send_cors_headers()
             self.end_headers()
+        elif parsed_path == "/media/search":
+            import urllib.parse
+            query_str = self.path.split("?", 1)[1] if "?" in self.path else ""
+            params = urllib.parse.parse_qs(query_str)
+            m_type = params.get("type", ["video"])[0]
+            q = params.get("query", [""])[0] or params.get("q", [""])[0]
+            cat = params.get("category", [""])[0]
+            limit = int(params.get("limit", [20])[0])
+            try:
+                from free_media_service import search_free_media
+                results = search_free_media(media_type=m_type, query=q, category=cat, limit=limit)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "count": len(results), "results": results}).encode("utf-8"))
+            except Exception as me:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(me)}).encode("utf-8"))
         else:
             self.send_response(404)
             self._send_cors_headers()
@@ -744,6 +766,47 @@ class SoundDesignerHandler(BaseHTTPRequestHandler):
                 self._send_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e), "trace": err_trace}).encode("utf-8"))
+
+        elif self.path == "/media/download":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode("utf-8"))
+                return
+
+            media_url = data.get("url") or data.get("filepath")
+            title = data.get("title", "media_asset")
+            m_type = data.get("type", "video")
+
+            if not media_url:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Missing media url parameter"}).encode("utf-8"))
+                return
+
+            try:
+                from free_media_service import download_and_prepare_media
+                prepared = download_and_prepare_media(media_url, title=title, media_type=m_type)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps(prepared).encode("utf-8"))
+            except Exception as de:
+                err_trace = traceback.format_exc()
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(de), "trace": err_trace}).encode("utf-8"))
 
         elif self.path == "/agent/youtube-ready":
             content_len = int(self.headers.get("Content-Length", 0))

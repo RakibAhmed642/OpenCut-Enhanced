@@ -21002,6 +21002,271 @@
         if (qClean) qClean.addEventListener("click", runCleanupChainPreview);
         
         // --- YouTube Ready Autonomous AI Agent Studio ---
+        
+        // --- OpenCut Free Stock Media, SFX & Meme GIF Browser ---
+        var _currentStockType = "video";
+        var _currentStockCategory = "";
+
+        var _stockCategories = {
+            video: ["All", "Cinematic", "Nature", "Tech", "Urban", "Abstract", "Business"],
+            sfx: ["All", "Whoosh", "Impact / Boom", "Pop / Snap", "UI / Click", "Notification", "Riser"],
+            gif: ["All", "Shocked", "Success", "Funny", "Applause", "Confused", "Failure"]
+        };
+
+        function renderStockCategoryPills(mType) {
+            var container = document.getElementById("stockCategoryPills");
+            if (!container) return;
+            container.innerHTML = "";
+            var cats = _stockCategories[mType] || _stockCategories.video;
+            cats.forEach(function (cat) {
+                var btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "pro-badge stock-cat-pill" + (cat === "All" || cat === _currentStockCategory ? " active" : "");
+                btn.textContent = cat;
+                btn.style.cursor = "pointer";
+                if (btn.classList.contains("active")) {
+                    btn.style.background = "rgba(34, 211, 238, 0.25)";
+                    btn.style.color = "#22d3ee";
+                    btn.style.borderColor = "#22d3ee";
+                }
+                btn.addEventListener("click", function () {
+                    container.querySelectorAll(".stock-cat-pill").forEach(function (b) {
+                        b.classList.remove("active");
+                        b.style.background = "";
+                        b.style.color = "";
+                        b.style.borderColor = "";
+                    });
+                    btn.classList.add("active");
+                    btn.style.background = "rgba(34, 211, 238, 0.25)";
+                    btn.style.color = "#22d3ee";
+                    btn.style.borderColor = "#22d3ee";
+                    _currentStockCategory = (cat === "All" ? "" : cat);
+                    loadStockMedia();
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        function setStockType(mType) {
+            _currentStockType = mType;
+            _currentStockCategory = "";
+
+            var vBtn = document.getElementById("stockTypeVideoBtn");
+            var sBtn = document.getElementById("stockTypeSfxBtn");
+            var gBtn = document.getElementById("stockTypeGifBtn");
+            var trackSelect = document.getElementById("stockTargetTrack");
+            var searchInput = document.getElementById("stockSearchInput");
+
+            [vBtn, sBtn, gBtn].forEach(function (b) {
+                if (b) {
+                    b.className = "btn-xs pro-btn-secondary";
+                    b.style.background = "";
+                    b.style.color = "";
+                    b.style.border = "";
+                }
+            });
+
+            if (mType === "video" && vBtn) {
+                vBtn.className = "btn-xs pro-btn-primary";
+                vBtn.style.background = "rgba(34, 211, 238, 0.3)";
+                vBtn.style.color = "#22d3ee";
+                vBtn.style.border = "1px solid #22d3ee";
+                if (trackSelect) trackSelect.value = "video:1";
+                if (searchInput) searchInput.placeholder = "Search free drone, cyberpunk, coding footage...";
+            } else if (mType === "sfx" && sBtn) {
+                sBtn.className = "btn-xs pro-btn-primary";
+                sBtn.style.background = "rgba(34, 211, 238, 0.3)";
+                sBtn.style.color = "#22d3ee";
+                sBtn.style.border = "1px solid #22d3ee";
+                if (trackSelect) trackSelect.value = "audio:1";
+                if (searchInput) searchInput.placeholder = "Search whoosh, impact, click, pop, riser...";
+            } else if (mType === "gif" && gBtn) {
+                gBtn.className = "btn-xs pro-btn-primary";
+                gBtn.style.background = "rgba(34, 211, 238, 0.3)";
+                gBtn.style.color = "#22d3ee";
+                gBtn.style.border = "1px solid #22d3ee";
+                if (trackSelect) trackSelect.value = "video:1";
+                if (searchInput) searchInput.placeholder = "Search mindblown, clap, reaction memes...";
+            }
+
+            renderStockCategoryPills(mType);
+            loadStockMedia();
+        }
+
+        function loadStockMedia() {
+            var grid = document.getElementById("stockMediaGrid");
+            var loader = document.getElementById("stockMediaLoader");
+            var countEl = document.getElementById("stockMediaCount");
+            var searchInput = document.getElementById("stockSearchInput");
+            var query = (searchInput ? searchInput.value : "").trim();
+
+            if (!grid) return;
+            if (loader) loader.classList.remove("hidden");
+            if (countEl) countEl.textContent = "Loading free assets...";
+
+            var url = "http://127.0.0.1:5682/media/search?type=" + encodeURIComponent(_currentStockType) +
+                      "&q=" + encodeURIComponent(query) +
+                      "&category=" + encodeURIComponent(_currentStockCategory);
+
+            fetch(url)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (loader) loader.classList.add("hidden");
+                    var items = (data && data.results) || [];
+                    if (countEl) countEl.textContent = items.length + " free assets found";
+                    grid.innerHTML = "";
+
+                    if (items.length === 0) {
+                        grid.innerHTML = '<div style="grid-column: span 2; text-align: center; padding: 24px; color: #64748b; font-size: 11.5px;">No assets found for this filter. Try another keyword or category!</div>';
+                        return;
+                    }
+
+                    items.forEach(function (item) {
+                        var card = document.createElement("div");
+                        card.style.cssText = "background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.15s, border-color 0.15s;";
+
+                        // Card Media Thumbnail / Waveform Header
+                        var mediaHead = document.createElement("div");
+                        mediaHead.style.cssText = "position: relative; height: 95px; background: #060911; display: flex; align-items: center; justify-content: center; overflow: hidden;";
+
+                        if (item.type === "video" || item.type === "gif") {
+                            var img = document.createElement("img");
+                            img.src = item.thumb || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400";
+                            img.style.cssText = "width: 100%; height: 100%; object-fit: cover;";
+                            img.loading = "lazy";
+                            mediaHead.appendChild(img);
+
+                            var playIcon = document.createElement("div");
+                            playIcon.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="white" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+                            playIcon.style.cssText = "position: absolute; inset: 0; margin: auto; width: 22px; height: 22px; pointer-events: none; opacity: 0.85;";
+                            mediaHead.appendChild(playIcon);
+                        } else {
+                            // SFX Icon Header
+                            mediaHead.innerHTML = '<div style="display: flex; flex-direction: column; align-items: center; gap: 4px; color: #22d3ee;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg><span style="font-size: 9.5px; font-weight: 700; color: #94a3b8; font-family: monospace;">' + (item.size || "SFX") + '</span></div>';
+                        }
+
+                        // Card Body
+                        var body = document.createElement("div");
+                        body.style.cssText = "padding: 8px; display: flex; flex-direction: column; gap: 6px; flex: 1;";
+
+                        var title = document.createElement("div");
+                        title.textContent = item.title;
+                        title.style.cssText = "font-size: 11px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+                        body.appendChild(title);
+
+                        var metaRow = document.createElement("div");
+                        metaRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; font-size: 9.5px;";
+                        metaRow.innerHTML = '<span style="color: #64748b; font-weight: 600;">' + (item.category || item.source) + '</span><span style="color: #4ade80; font-weight: 700;">' + (item.license.indexOf("CC0") !== -1 ? "CC0 Free" : "Free") + '</span>';
+                        body.appendChild(metaRow);
+
+                        // Actions Row: Preview & Insert Buttons
+                        var actions = document.createElement("div");
+                        actions.style.cssText = "display: flex; gap: 5px; margin-top: auto; padding-top: 4px;";
+
+                        var prevBtn = document.createElement("button");
+                        prevBtn.type = "button";
+                        prevBtn.className = "btn-secondary pro-btn-secondary btn-xs";
+                        prevBtn.style.cssText = "flex: 1; height: 26px; font-size: 10px; display: flex; align-items: center; justify-content: center; gap: 3px;";
+                        prevBtn.innerHTML = '▶ Preview';
+                        prevBtn.addEventListener("click", function () {
+                            if (item.type === "sfx") {
+                                var player = document.getElementById("stockAudioPlayer");
+                                if (player && item.preview_url) {
+                                    player.src = item.preview_url;
+                                    player.play().catch(function() {});
+                                }
+                            } else {
+                                window.open(item.url, "_blank");
+                            }
+                        });
+
+                        var insertBtn = document.createElement("button");
+                        insertBtn.type = "button";
+                        insertBtn.className = "btn-primary pro-btn-primary btn-xs";
+                        insertBtn.style.cssText = "flex: 1.3; height: 26px; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; background: linear-gradient(135deg, #0891b2, #0284c7);";
+                        insertBtn.innerHTML = '<span>+ Insert</span>';
+
+                        insertBtn.addEventListener("click", function () {
+                            insertBtn.disabled = true;
+                            insertBtn.innerHTML = '<span class="spinner" style="display:inline-block;width:10px;height:10px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span>';
+
+                            var trackVal = (document.getElementById("stockTargetTrack") || {}).value || "video:1";
+                            var posMode = (document.getElementById("stockPositionMode") || {}).value || "playhead";
+                            var trackParts = trackVal.split(":");
+                            var targetTrackType = trackParts[0] || (item.type === "sfx" ? "audio" : "video");
+                            var targetTrackIndex = parseInt(trackParts[1] || "1", 10);
+
+                            // 1. Download asset to local project folder
+                            var assetSource = item.path || item.url;
+                            fetch("http://127.0.0.1:5682/media/download", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    url: assetSource,
+                                    title: item.title,
+                                    type: item.type
+                                })
+                            })
+                            .then(function (r) { return r.json(); })
+                            .then(function (dlRes) {
+                                if (dlRes.error) throw new Error(dlRes.error);
+                                var localFile = dlRes.local_path;
+
+                                // 2. Insert into Premiere Pro Timeline via ExtendScript
+                                var timelineConfig = {
+                                    filepath: localFile,
+                                    trackType: targetTrackType,
+                                    trackIndex: targetTrackIndex,
+                                    positionMode: posMode
+                                };
+
+                                jsx("insertMediaToTimeline", [JSON.stringify(timelineConfig)], function (jsxRes) {
+                                    insertBtn.disabled = false;
+                                    insertBtn.innerHTML = '<span>✓ Inserted</span>';
+                                    setTimeout(function () { insertBtn.innerHTML = '<span>+ Insert</span>'; }, 2000);
+                                    showToast("Inserted " + item.title + " into Premiere Pro timeline!", "success");
+                                });
+                            })
+                            .catch(function (dlErr) {
+                                insertBtn.disabled = false;
+                                insertBtn.innerHTML = '<span>+ Insert</span>';
+                                showAlert("Failed to insert asset: " + (dlErr.message || dlErr));
+                            });
+                        });
+
+                        actions.appendChild(prevBtn);
+                        actions.appendChild(insertBtn);
+                        body.appendChild(actions);
+
+                        card.appendChild(mediaHead);
+                        card.appendChild(body);
+                        grid.appendChild(card);
+                    });
+                })
+                .catch(function (err) {
+                    if (loader) loader.classList.add("hidden");
+                    if (countEl) countEl.textContent = "Error loading assets: " + err.message;
+                });
+        }
+
+        // Initialize Stock Media Browser Event Listeners
+        var btnV = document.getElementById("stockTypeVideoBtn");
+        var btnS = document.getElementById("stockTypeSfxBtn");
+        var btnG = document.getElementById("stockTypeGifBtn");
+        var sBtn = document.getElementById("stockSearchBtn");
+        var sInput = document.getElementById("stockSearchInput");
+        var subTabStock = document.getElementById("subTabStockMedia");
+
+        if (btnV) btnV.addEventListener("click", function () { setStockType("video"); });
+        if (btnS) btnS.addEventListener("click", function () { setStockType("sfx"); });
+        if (btnG) btnG.addEventListener("click", function () { setStockType("gif"); });
+        if (sBtn) sBtn.addEventListener("click", loadStockMedia);
+        if (sInput) sInput.addEventListener("keydown", function (e) { if (e.key === "Enter") loadStockMedia(); });
+        if (subTabStock) subTabStock.addEventListener("click", function () {
+            if (!_currentStockType) setStockType("video");
+            else loadStockMedia();
+        });
+
         function openYouTubeAgentModal() {
             var modal = document.getElementById("youtubeAgentModal");
             if (!modal) return;
