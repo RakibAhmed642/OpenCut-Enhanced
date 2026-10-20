@@ -297,25 +297,22 @@ git clone https://github.com/RakibAhmed642/OpenCut-Enhanced.git
 cd OpenCut-Enhanced
 ```
 
-### 2. Install the Premiere Pro Extension
-1. Enable CEP Debug Mode in Windows Registry:
-   ```powershell
-   reg add "HKEY_CURRENT_USER\Software\Adobe\CSXS.11" /v PlayerDebugMode /t REG_SZ /d "1" /f
-   ```
-2. Run the automated extension sync tool:
-   ```powershell
-   python sync_extension.py
-   ```
-3. Launch Adobe Premiere Pro, then navigate to:  
-   **Window** $\\rightarrow$
-ightarrow$\\rightarrow$ **Extensions** $\\rightarrow$
-ightarrow$\\rightarrow$ **OpenCut**.
-
-### 3. Start Local Services
-Launch both local daemons with a single click:
-```cmd
-Start-OpenCut.bat
+### 2. ⚡ One-Click Automatic Setup & Desktop Icon
+Run the universal auto-setup script once after cloning:
+```bash
+python setup_environment.py
 ```
+This automatically:
+1. Enables **PlayerDebugMode** in Windows Registry across all Premiere Pro versions (CSXS.9–CSXS.18).
+2. Installs and links the **OpenCut CEP panel** directly into `%APPDATA%\Adobe\CEP\extensions`.
+3. Creates a **1-Click "OpenCut Enhanced" Desktop Shortcut** with the official logo icon.
+
+### 3. 🚀 Launching OpenCut
+Whenever you want to use OpenCut:
+* **Option A (Desktop):** Simply double-click the **"OpenCut Enhanced"** icon on your Desktop! It launches both background AI daemons (Port 5679 and Port 5682).
+* **Option B (Batch Launcher):** Double-click `Start-OpenCut.bat`.
+* **Inside Premiere Pro:** Open your sequence, then go to **Window → Extensions → OpenCut**.
+
 Or start via PowerShell:
 ```powershell
 # OpenCut Core Server (Port 5679)
