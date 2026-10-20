@@ -53,21 +53,33 @@ def sync_extension_to_adobe():
 
 def create_desktop_shortcut():
     """Creates a 1-click Desktop Shortcut with OpenCut icon."""
-    print("  [3/4] Creating 1-Click Desktop Shortcut...")
+    print("  [3/4] Creating 1-Click Desktop Shortcut with official logo...")
     desktop_path = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
     if not desktop_path.exists():
         desktop_path = Path.home() / "Desktop"
 
     shortcut_path = desktop_path / "OpenCut Enhanced.lnk"
-    target_bat = BASE_DIR / "OpenCut-Launcher.vbs"
-    icon_file = BASE_DIR / "logo.ico"
+    target_bat = (BASE_DIR / "OpenCut-Launcher.vbs").resolve()
+    if not target_bat.exists():
+        target_bat = (BASE_DIR / "Start-OpenCut.bat").resolve()
+
+    icon_file = (BASE_DIR / "logo.ico").resolve()
+    if not icon_file.exists():
+        icon_file = (BASE_DIR / "icon.ico").resolve()
+
+    # Invalidate and delete existing shortcut to ensure Windows Explorer refreshes the icon
+    if shortcut_path.exists():
+        try:
+            shortcut_path.unlink()
+        except Exception:
+            pass
 
     vbs_script = f"""
 Set oWS = WScript.CreateObject("WScript.Shell")
 sLinkFile = "{str(shortcut_path)}"
 Set oLink = oWS.CreateShortcut(sLinkFile)
 oLink.TargetPath = "{str(target_bat)}"
-oLink.WorkingDirectory = "{str(BASE_DIR)}"
+oLink.WorkingDirectory = "{str(BASE_DIR.resolve())}"
 oLink.Description = "OpenCut Enhanced - Autonomous AI Video Editor Studio"
 oLink.IconLocation = "{str(icon_file)},0"
 oLink.Save
@@ -79,7 +91,15 @@ oLink.Save
         subprocess.run(f'cscript //nologo "{tmp_vbs}"', shell=True, capture_output=True)
         if tmp_vbs.exists():
             os.remove(str(tmp_vbs))
-        print(f"        [OK] Desktop shortcut created: {shortcut_path}")
+
+        # Notify Windows Shell of icon association update
+        try:
+            import ctypes
+            ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+        except Exception:
+            pass
+
+        print(f"        [OK] Desktop shortcut created with custom icon: {shortcut_path}")
     except Exception as e:
         print(f"        [!] Shortcut notice: {e}")
 
