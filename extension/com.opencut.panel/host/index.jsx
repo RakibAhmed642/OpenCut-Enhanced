@@ -6243,3 +6243,22 @@ function ocInsertHookIntroToTimeline(paramsJson) {
     }
 }
 
+
+
+/**
+ * Sets the active sequence playhead to the designated timestamp in seconds.
+ * @param {number|string} seconds
+ * @returns {string} JSON
+ */
+function setPlayheadTime(seconds) {
+    if (!app || !app.project || !app.project.activeSequence) return JSON.stringify({ error: "No active sequence" });
+    try {
+        var seq = app.project.activeSequence;
+        var t = new Time();
+        t.seconds = parseFloat(seconds);
+        seq.setPlayerPosition(t.ticks);
+        return JSON.stringify({ success: true, seconds: parseFloat(seconds) });
+    } catch (e) {
+        return JSON.stringify({ error: e.toString() });
+    }
+}

@@ -1958,6 +1958,7 @@
                     <button type="button" class="sub-tab" data-sub="cap-repeat" data-i18n="subtabs.repeats">Repeats</button>
                     <button type="button" class="sub-tab" data-sub="cap-chapters" data-i18n="subtabs.chapters">Chapters</button>
                     <button type="button" class="sub-tab" data-sub="cap-srt-import" data-i18n="subtabs.srt_import">SRT Import</button>
+                    <button type="button" class="sub-tab" data-sub="cap-keyword-spot" id="subTabKeywordSpot" style="background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.35); font-weight: 700;">🎯 Keyword Cues</button>
                 </div>
 
                 <div class="sub-panel active" id="sub-cap-styled">
@@ -1978,22 +1979,54 @@
                         <div class="form-group">
                             <label for="captionLang" data-i18n="forms.language">Language</label>
                             <select id="captionLang">
-                                <option value="" data-i18n="language.auto_detect">Auto-detect</option>
-                                <option value="en" data-i18n="language.english">English</option>
-                                <option value="es" data-i18n="language.spanish">Spanish</option>
-                                <option value="fr" data-i18n="language.french">French</option>
-                                <option value="de" data-i18n="language.german">German</option>
-                                <option value="ja" data-i18n="language.japanese">Japanese</option>
-                                <option value="ko" data-i18n="language.korean">Korean</option>
-                                <option value="zh" data-i18n="language.chinese">Chinese</option>
-                                <option value="pt" data-i18n="language.portuguese">Portuguese</option>
-                                <option value="it" data-i18n="language.italian">Italian</option>
-                                <option value="ru" data-i18n="language.russian">Russian</option>
+                                <option value="">Auto-detect (All 99+ Languages)</option>
+                                <option value="en" selected>English</option>
+                                <option value="bn">বাংলা (Bengali)</option>
+                                <option value="hi">हिन्दी (Hindi)</option>
+                                <option value="ur">اردو (Urdu)</option>
+                                <option value="ar">العربية (Arabic)</option>
+                                <option value="es">Español (Spanish)</option>
+                                <option value="fr">Français (French)</option>
+                                <option value="de">Deutsch (German)</option>
+                                <option value="ja">日本語 (Japanese)</option>
+                                <option value="ko">한국어 (Korean)</option>
+                                <option value="zh">中文 (Chinese)</option>
+                                <option value="pt">Português (Portuguese)</option>
+                                <option value="it">Italiano (Italian)</option>
+                                <option value="ru">Русский (Russian)</option>
+                                <option value="tr">Türkçe (Turkish)</option>
+                                <option value="id">Bahasa Indonesia</option>
+                                <option value="vi">Tiếng Việt (Vietnamese)</option>
+                                <option value="th">ไทย (Thai)</option>
+                                <option value="nl">Nederlands (Dutch)</option>
+                                <option value="pl">Polski (Polish)</option>
+                                <option value="sv">Svenska (Swedish)</option>
+                                <option value="tl">Filipino (Tagalog)</option>
+                                <option value="ta">தமிழ் (Tamil)</option>
+                                <option value="te">తెలుగు (Telugu)</option>
+                                <option value="fa">فارسی (Persian)</option>
+                                <option value="ms">Bahasa Melayu</option>
+                                <option value="uk">Українська (Ukrainian)</option>
+                                <option value="el">Ελληνικά (Greek)</option>
+                                <option value="he">עברית (Hebrew)</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label for="captionStyle" data-i18n="forms.style">Style</label>
                             <select id="captionStyle">
+                                <optgroup label="Famous YouTuber Styles" style="color: #facc15; font-weight: 800;">
+                                    <option value="mrbeast" selected>MrBeast (Yellow Bold 3D Punch)</option>
+                                    <option value="alex_hormozi">Alex Hormozi (Viral High-Contrast)</option>
+                                    <option value="ali_abdaal">Ali Abdaal (Aesthetic Clean Pill)</option>
+                                    <option value="iman_gadzhi">Iman Gadzhi (Luxury Gold Serif)</option>
+                                    <option value="vox_journalism">Vox Editorial (Boxed Tape Highlight)</option>
+                                    <option value="ryan_trahan">Ryan Trahan (Orange/Cyan Friendly)</option>
+                                    <option value="dhruv_rathee">Dhruv Rathee (High-Impact Explainer)</option>
+                                    <option value="magnates_media">Magnates Media (Cinematic Noir Gold)</option>
+                                    <option value="tiktok_viral_bounce">TikTok Viral (Karaoke Pop Bounce)</option>
+                                    <option value="gaming_streamer">PewDiePie / Streamer (Neon Cyan)</option>
+                                    <option value="minimal_tech">MKBHD Tech Minimalist</option>
+                                </optgroup>
                                 <optgroup label="Popular" data-i18n-label="captions.style_group_popular">
                                     <option value="youtube_bold" selected data-i18n="captions.style_youtube_bold">YouTube Bold</option>
                                     <option value="clean_modern" data-i18n="captions.style_clean_modern">Clean Modern</option>
@@ -2522,7 +2555,131 @@
                 </div>
             </div>
 
-            <!-- ======== TAB: AUDIO ======== -->
+                            <!-- KEYWORD CUE SPOTTER & CALLOUT OVERLAY -->
+                <div class="sub-panel" id="sub-cap-keyword-spot">
+                    <section class="card pro-card" style="border: 1px solid rgba(250, 204, 21, 0.3); background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(9, 12, 20, 0.98));">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 10px; margin-bottom: 12px;">
+                            <div class="card-title-group">
+                                <div class="card-title" style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 800; color: #facc15;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                                    <span>Selective Keyword Spotter &amp; Callout Cues</span>
+                                </div>
+                                <div class="card-subtitle" style="font-size: 10.5px; color: #94a3b8;">Spots target words when pronounced in video and stamps animated callout captions on a dedicated track</div>
+                            </div>
+                            <span class="pro-badge" style="background: rgba(250, 204, 21, 0.2); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.5); font-weight: 800; font-size: 10px; padding: 2px 7px; border-radius: 4px;">PRO CUES</span>
+                        </div>
+
+                        <!-- 1. Target Keywords Input -->
+                        <div class="form-group">
+                            <label for="kwTargetInput" style="font-size: 11px; font-weight: 700; color: #f1f5f9; display: flex; justify-content: space-between;">
+                                <span>Target Trigger Words (Comma-Separated)</span>
+                                <span style="font-size: 10px; color: #94a3b8;">Supports Bengali, English &amp; All Languages</span>
+                            </label>
+                            <input type="text" id="kwTargetInput" class="text-input" placeholder="e.g. subscribe, money, secret, free, লাইক, অফার" value="subscribe, money, secret, free" style="height: 32px; font-size: 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(250, 204, 21, 0.3); color: #facc15; font-weight: 600;">
+                        </div>
+
+                        <!-- Quick Presets -->
+                        <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <span style="font-size: 10px; color: #64748b; line-height: 22px;">Quick Presets:</span>
+                            <button type="button" class="btn-xs pro-btn-secondary kw-preset-btn" data-words="subscribe, like, comment, share" style="font-size: 10px; padding: 2px 7px; cursor: pointer;">🔔 Subscribe / Like</button>
+                            <button type="button" class="btn-xs pro-btn-secondary kw-preset-btn" data-words="secret, money, profit, free, hack" style="font-size: 10px; padding: 2px 7px; cursor: pointer;">💰 Secret / Money</button>
+                            <button type="button" class="btn-xs pro-btn-secondary kw-preset-btn" data-words="wait, stop, watch, look, listen" style="font-size: 10px; padding: 2px 7px; cursor: pointer;">🛑 Hook &amp; Attention</button>
+                            <button type="button" class="btn-xs pro-btn-secondary kw-preset-btn" data-words="লাইক, সাবস্ক্রাইব, ধন্যবাদ, কিন্তু, তবে" style="font-size: 10px; padding: 2px 7px; cursor: pointer;">🇧🇩 বাংলা ক্রিয়েটর</button>
+                        </div>
+
+                        <!-- 2. YouTuber Style & Animation Grid -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="kwStyleSelect" style="font-size: 10.5px; color: #94a3b8;">YouTuber Callout Style</label>
+                                <select id="kwStyleSelect" style="height: 28px; font-size: 11px;">
+                                    <option value="mrbeast" selected>MrBeast Bold Punch (Yellow/Cyan Pop)</option>
+                                    <option value="alex_hormozi">Alex Hormozi Viral (White/Gold Impact)</option>
+                                    <option value="ali_abdaal">Ali Abdaal Aesthetic (Clean Minimal Pill)</option>
+                                    <option value="iman_gadzhi">Iman Gadzhi Luxury (Gold Serif Glow)</option>
+                                    <option value="neon_glow">Cyberpunk Neon Glow (Cyan/Magenta)</option>
+                                    <option value="comic_punch">Comic Punch (Red/Yellow Badge)</option>
+                                    <option value="minimal_tag">Minimalist Clean Tag</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="kwAnimSelect" style="font-size: 10.5px; color: #94a3b8;">Entrance Animation</label>
+                                <select id="kwAnimSelect" style="height: 28px; font-size: 11px;">
+                                    <option value="pop" selected>⚡ Overshoot Pop-In</option>
+                                    <option value="bounce">🏀 Bouncy Spring Pop</option>
+                                    <option value="slide_up">⬆️ Slide Up</option>
+                                    <option value="glow">✨ Glowing Pulse</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 3. Position & Target Track -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="kwPositionSelect" style="font-size: 10px; color: #94a3b8;">Screen Position</label>
+                                <select id="kwPositionSelect" style="height: 26px; font-size: 11px;">
+                                    <option value="center" selected>Screen Center (Pop)</option>
+                                    <option value="lower_third">Lower Third (Subtitle)</option>
+                                    <option value="top">Top Floating Badge</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="kwFontSizeInput" style="font-size: 10px; color: #94a3b8;">Font Size (px)</label>
+                                <input type="number" id="kwFontSizeInput" value="54" min="20" max="150" class="text-input" style="height: 26px; font-size: 11px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="kwTargetTrackSelect" style="font-size: 10px; color: #facc15; font-weight: 700;">Target Track</label>
+                                <select id="kwTargetTrackSelect" style="height: 26px; font-size: 11px; border-color: rgba(250, 204, 21, 0.4);">
+                                    <option value="v4" selected>V4 (Special Cue Track)</option>
+                                    <option value="v3">V3 (Subtitles Track)</option>
+                                    <option value="v2">V2 (Overlay Track)</option>
+                                    <option value="v5">V5 (Top Callout Track)</option>
+                                    <option value="caption">Caption Stream</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 4. Synced Sound Design Trigger -->
+                        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: #f1f5f9; cursor: pointer; margin: 0;">
+                                    <input type="checkbox" id="kwAddSoundCue" checked style="accent-color: #facc15; width: 15px; height: 15px;">
+                                    <span>🔊 Auto Synced SFX Cue (Pop/Ding on display)</span>
+                                </label>
+                                <div style="font-size: 10px; color: #94a3b8; margin-left: 23px; margin-top: 2px;">Plays crisp audio cue on Track A2 at the exact millisecond the word is pronounced</div>
+                            </div>
+                            <select id="kwSfxTypeSelect" style="height: 26px; font-size: 10.5px; width: 110px;">
+                                <option value="pop_click" selected>Pop Click</option>
+                                <option value="arcade_pop">Arcade Pop</option>
+                                <option value="bell_ding">Bell Ding</option>
+                                <option value="cash_register">Cha-Ching</option>
+                                <option value="whoosh_fast">Air Whoosh</option>
+                            </select>
+                        </div>
+
+                        <!-- 5. Action Button -->
+                        <button type="button" class="btn-primary pro-btn-primary" id="runKeywordSpotterBtn" style="height: 36px; font-weight: 800; font-size: 12px; background: linear-gradient(135deg, #d97706, #f59e0b); color: #000; border: none; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3); cursor: pointer; width: 100%;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                            <span>🎯 Spot Keywords &amp; Stamp Timeline Cues</span>
+                        </button>
+
+                        <!-- 6. Results Card (Dynamic) -->
+                        <div id="kwResultCard" class="hidden" style="margin-top: 12px; background: rgba(250, 204, 21, 0.08); border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 12.5px; font-weight: 800; color: #facc15;">Keyword Cue Matches</span>
+                                <span id="kwMatchBadge" class="pro-badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); font-size: 10px;">0 Matches</span>
+                            </div>
+                            <div style="font-size: 10.5px; color: #cbd5e1;">Click any timestamp below to seek Premiere Pro playhead directly to that moment:</div>
+                            <div id="kwMatchesList" style="max-height: 140px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px;"></div>
+                            <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                <button type="button" class="btn-primary pro-btn-primary btn-sm" id="kwReinsertBtn" style="flex: 1; height: 28px; font-size: 11px;">
+                                    <span>✓ Insert onto Timeline Track</span>
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+<!-- ======== TAB: AUDIO ======== -->
             <div class="nav-panel" id="panel-audio" role="tabpanel" aria-label="Audio" data-i18n-aria-label="tabs.audio">
                 <div class="quick-actions" id="quickActionsAudio">
                     <button type="button" class="quick-action-btn" id="quickStudioAudio" disabled title="Denoise + normalize + loudness match" data-i18n-title="quick_actions.audio_studio_title">

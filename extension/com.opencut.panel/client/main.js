@@ -8979,6 +8979,67 @@
     }
 
     function loadStylePreview() {
+        var ytStyles = {
+            mrbeast: {
+                css: "font-family:Impact,Montserrat,sans-serif;font-weight:900;text-transform:uppercase;color:#FFEE00;-webkit-text-stroke:2.5px #000;text-shadow:3px 3px 0 #000;letter-spacing:1px;",
+                highlight: "#00F2FE",
+                action: "#22C55E"
+            },
+            alex_hormozi: {
+                css: "font-family:Montserrat,sans-serif;font-weight:900;text-transform:uppercase;color:#FFFFFF;-webkit-text-stroke:2px #000;text-shadow:2px 2px 0 #000;",
+                highlight: "#FACC15",
+                action: "#10B981"
+            },
+            ali_abdaal: {
+                css: "font-family:Inter,sans-serif;font-weight:600;color:#F8FAFC;background:rgba(15,23,42,0.8);padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);",
+                highlight: "#38BDF8",
+                action: "#FDE047"
+            },
+            iman_gadzhi: {
+                css: "font-family:Cinzel,serif;font-weight:700;color:#F59E0B;text-shadow:0 0 10px rgba(245,158,11,0.5),2px 2px 2px #000;letter-spacing:2px;",
+                highlight: "#FFFFFF",
+                action: "#FDE047"
+            },
+            vox_journalism: {
+                css: "font-family:Helvetica,Arial,sans-serif;font-weight:800;color:#0F172A;background:#FACC15;padding:2px 6px;border-radius:2px;text-transform:uppercase;",
+                highlight: "#DC2626",
+                action: "#FFFFFF"
+            },
+            ryan_trahan: {
+                css: "font-family:Cooper Black,Poppins,sans-serif;font-weight:800;color:#FFFFFF;-webkit-text-stroke:1.8px #000;text-shadow:2px 2px 0 #000;",
+                highlight: "#FB923C",
+                action: "#22D3EE"
+            },
+            dhruv_rathee: {
+                css: "font-family:Roboto,sans-serif;font-weight:800;color:#FFFFFF;background:rgba(0,0,0,0.85);padding:3px 8px;border-left:4px solid #EF4444;",
+                highlight: "#EF4444",
+                action: "#FACC15"
+            },
+            magnates_media: {
+                css: "font-family:Trajan Pro,Georgia,serif;font-weight:700;color:#E2E8F0;text-shadow:0 0 12px rgba(239,68,68,0.7),2px 2px 4px #000;letter-spacing:1px;",
+                highlight: "#F59E0B",
+                action: "#EF4444"
+            },
+            tiktok_viral_bounce: {
+                css: "font-family:Montserrat,sans-serif;font-weight:800;color:#FFFFFF;-webkit-text-stroke:1.5px #0B0F19;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.6));",
+                highlight: "#22D3EE",
+                action: "#EC4899"
+            },
+            gaming_streamer: {
+                css: "font-family:Impact,sans-serif;font-weight:900;color:#00F2FE;-webkit-text-stroke:2px #0B0D14;text-shadow:3px 3px 0 #9333EA;",
+                highlight: "#FACC15",
+                action: "#FF007F"
+            },
+            minimal_tech: {
+                css: "font-family:SF Pro Display,-apple-system,sans-serif;font-weight:600;color:#F1F5F9;text-shadow:0 2px 4px rgba(0,0,0,0.8);letter-spacing:-0.02em;",
+                highlight: "#60A5FA",
+                action: "#34D399"
+            }
+        };
+        for (var yk in ytStyles) {
+            stylePreviewMap[yk] = ytStyles[yk];
+        }
+
         api("GET", "/caption-styles", null, function (err, data) {
             if (!err && data && data.styles) {
                 for (var i = 0; i < data.styles.length; i++) {
@@ -8989,8 +9050,8 @@
                         action: s.action_color || "#ff3232"
                     };
                 }
-                updateStylePreview();
             }
+            updateStylePreview();
         });
     }
 
@@ -20074,7 +20135,168 @@
         // Slider: beat marker subdivisions (no display needed, select-only)
     }
 
+    
+    // ================================================================
+    // Selective Keyword Spotter & Callout Cues Engine
+    // ================================================================
+    var _lastKeywordCuesResult = null;
+
+    function initKeywordSpotter() {
+        var runBtn = document.getElementById("runKeywordSpotterBtn");
+        var reinsertBtn = document.getElementById("kwReinsertBtn");
+        var targetInput = document.getElementById("kwTargetInput");
+        var styleSelect = document.getElementById("kwStyleSelect");
+        var animSelect = document.getElementById("kwAnimSelect");
+        var posSelect = document.getElementById("kwPositionSelect");
+        var sizeInput = document.getElementById("kwFontSizeInput");
+        var trackSelect = document.getElementById("kwTargetTrackSelect");
+        var soundCheck = document.getElementById("kwAddSoundCue");
+        var sfxSelect = document.getElementById("kwSfxTypeSelect");
+
+        // Quick Preset buttons
+        document.querySelectorAll(".kw-preset-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var words = this.getAttribute("data-words");
+                if (words && targetInput) {
+                    targetInput.value = words;
+                    targetInput.focus();
+                }
+            });
+        });
+
+        if (runBtn) {
+            runBtn.addEventListener("click", function () {
+                if (!selectedPath) {
+                    showAlert(t("toast.select_clip_first", "Please select a clip or active sequence first."));
+                    return;
+                }
+                var rawWords = (targetInput ? targetInput.value : "").trim();
+                if (!rawWords) {
+                    showAlert("Please enter at least one target keyword to spot.");
+                    return;
+                }
+
+                runBtn.disabled = true;
+                runBtn.innerHTML = '<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #000;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:6px;"></span> Spotting Keywords &amp; Transcribing...';
+
+                var targetWordsList = rawWords.split(",").map(function (w) { return w.trim(); }).filter(Boolean);
+                var langVal = (document.getElementById("captionLang") || {}).value || "auto";
+                var modelVal = (document.getElementById("captionModel") || {}).value || "base";
+
+                fetch("http://127.0.0.1:5682/captions/keyword-cues", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        filepath: selectedPath,
+                        target_words: targetWordsList,
+                        output_dir: projectFolder,
+                        options: {
+                            style: styleSelect ? styleSelect.value : "mrbeast",
+                            animation: animSelect ? animSelect.value : "pop",
+                            position: posSelect ? posSelect.value : "center",
+                            font_size: sizeInput ? sizeInput.value : 54,
+                            target_track: trackSelect ? trackSelect.value : "v4",
+                            add_sound_cue: soundCheck ? soundCheck.checked : true,
+                            sfx_type: sfxSelect ? sfxSelect.value : "pop_click",
+                            language: langVal,
+                            model: modelVal
+                        }
+                    })
+                })
+                .then(function (r) {
+                    if (!r.ok) {
+                        return r.json().then(function (err) { throw new Error(err.error || ("HTTP " + r.status)); });
+                    }
+                    return r.json();
+                })
+                .then(function (res) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg><span>🎯 Spot Keywords &amp; Stamp Timeline Cues</span>';
+
+                    _lastKeywordCuesResult = res;
+
+                    var resCard = document.getElementById("kwResultCard");
+                    var badge = document.getElementById("kwMatchBadge");
+                    var list = document.getElementById("kwMatchesList");
+
+                    if (resCard) resCard.classList.remove("hidden");
+                    if (badge) {
+                        badge.textContent = (res.detected_count || 0) + " Matches Found";
+                        badge.style.background = res.detected_count > 0 ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)";
+                        badge.style.color = res.detected_count > 0 ? "#4ade80" : "#f87171";
+                    }
+
+                    if (list) {
+                        list.innerHTML = "";
+                        var matches = res.matches || [];
+                        if (matches.length === 0) {
+                            list.innerHTML = '<div style="font-size: 11px; color: #94a3b8; padding: 6px;">No keyword occurrences detected in this audio. Try different words or check language.</div>';
+                        } else {
+                            matches.forEach(function (m) {
+                                var row = document.createElement("div");
+                                row.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 4px 8px; border-radius: 4px; font-size: 11px;";
+                                row.innerHTML = '<div style="display: flex; align-items: center; gap: 8px;"><span style="color: #facc15; font-weight: 800; font-family: monospace;">' + m.timestamp_str + '</span><span style="color: #f1f5f9; font-weight: 700;">\"' + m.word + '\"</span></div><button type="button" class="btn-xs pro-btn-secondary" style="padding: 1px 6px; font-size: 10px; border-radius: 3px; cursor: pointer;">Seek ▶</button>';
+                                var seekBtn = row.querySelector("button");
+                                seekBtn.addEventListener("click", function () {
+                                    try {
+                                        jsx("setPlayheadTime", [m.start], function () {});
+                                    } catch (e) {}
+                                });
+                                list.appendChild(row);
+                            });
+                        }
+                    }
+
+                    // Timeline insertion
+                    if (res.ass_path || res.srt_path) {
+                        var targetFile = res.ass_path || res.srt_path;
+                        var targetTrack = res.target_track || "v4";
+                        PremiereBridge.importCaptions(targetFile, targetTrack, function (impRes) {
+                            showToast("Spotted " + res.detected_count + " keywords! Stamped on Track " + targetTrack.toUpperCase(), "success");
+                        });
+
+                        // Insert SFX stem if generated
+                        if (res.sfx_stem_path) {
+                            var timelineCfg = {
+                                filepath: res.sfx_stem_path,
+                                trackType: "audio",
+                                trackIndex: 2,
+                                positionMode: "start"
+                            };
+                            jsx("insertMediaToTimeline", [JSON.stringify(timelineCfg)], function () {});
+                        }
+                    } else {
+                        showToast("Scan finished: 0 matches for target words.", "info");
+                    }
+                })
+                .catch(function (err) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = '<span>Retry Keyword Spotter</span>';
+                    showAlert("Keyword spotter error: " + (err.message || err));
+                });
+            });
+        }
+
+        if (reinsertBtn) {
+            reinsertBtn.addEventListener("click", function () {
+                if (!_lastKeywordCuesResult) {
+                    showAlert("No keyword cues to insert yet. Click 'Spot Keywords' first.");
+                    return;
+                }
+                var targetFile = _lastKeywordCuesResult.ass_path || _lastKeywordCuesResult.srt_path;
+                var trackVal = trackSelect ? trackSelect.value : "v4";
+                if (targetFile) {
+                    PremiereBridge.importCaptions(targetFile, trackVal, function () {
+                        showToast("Re-inserted keyword cues onto Track " + trackVal.toUpperCase(), "success");
+                    });
+                }
+            });
+        }
+    }
+
+
     function initCaptionNewFeatures() {
+        initKeywordSpotter();
         // Repeat detection
         var repeatBtn = document.getElementById("runRepeatDetectBtn");
         if (repeatBtn) repeatBtn.addEventListener("click", runRepeatDetect);
@@ -21715,6 +21937,8 @@
             var tabBtn = document.getElementById("subTabAutoHook");
             if (tabBtn) tabBtn.click();
         });
+
+        try { initKeywordSpotter(); } catch (e) {}
 
         // Captions quick actions
         var qSub = document.getElementById("quickAutoSubtitle");
