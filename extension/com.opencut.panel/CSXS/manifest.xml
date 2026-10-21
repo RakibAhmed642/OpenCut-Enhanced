@@ -28,6 +28,13 @@
                 <Resources>
                     <MainPath>./client/dist/index.html</MainPath>
                     <ScriptPath>./host/index.jsx</ScriptPath>
+                    <CEFCommandLine>
+                        <Parameter>--high-dpi-support=1</Parameter>
+                        <Parameter>--disable-gpu</Parameter>
+                        <Parameter>--disable-gpu-compositing</Parameter>
+                        <Parameter>--disable-accelerated-video-decode</Parameter>
+                        <Parameter>--disable-accelerated-2d-canvas</Parameter>
+                    </CEFCommandLine>
                 </Resources>
                 <Lifecycle>
                     <AutoVisible>true</AutoVisible>
@@ -41,8 +48,8 @@
                             <Width>900</Width>
                         </Size>
                         <MinSize>
-                            <Height>400</Height>
-                            <Width>480</Width>
+                            <Height>250</Height>
+                            <Width>250</Width>
                         </MinSize>
                     </Geometry>
                     <Icons>

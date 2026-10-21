@@ -22830,13 +22830,9 @@
 
             function init() {
                 bindButtons();
-                wireCsxsEvents();
-                // Sequence the startup probes so we don't block the first
-                // health check / media scan.
+                // Sequence safe UI checks without firing intrusive host-level probes
                 setTimeout(checkChangelog, 1200);
                 setTimeout(maybeRunOnboarding, 600);
-                setTimeout(runQeReflect, 2400);
-                setTimeout(runPingProbe, 3000);
             }
 
             return {

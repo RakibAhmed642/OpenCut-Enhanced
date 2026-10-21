@@ -4985,41 +4985,10 @@ function ocQeReflect() {
         if (!out.premiere_version && app && app.version) {
             out.premiere_version = String(app.version);
         }
-
-        // QE is gated behind enableQE(); not all builds expose it.
-        try {
-            if (typeof app.enableQE === "function") {
-                app.enableQE();
-                out.enabled = true;
-            }
-        } catch (eQe) {
-            out.enabled = false;
-        }
-
-        // Reflect on the qe namespace if present.
-        var names = [];
-        try {
-            if (typeof qe !== "undefined" && qe && qe.reflect && qe.reflect.methods) {
-                var mm = qe.reflect.methods;
-                for (var i = 0; i < mm.length; i++) {
-                    try {
-                        if (mm[i] && mm[i].name) names.push(String(mm[i].name));
-                    } catch (eN) {}
-                }
-            } else if (typeof qe !== "undefined" && qe) {
-                // Older builds: walk the object's own keys.
-                for (var k in qe) {
-                    if (typeof qe[k] === "function") names.push(String(k));
-                }
-            }
-        } catch (eRefl) {
-            _ocLog("ocQeReflect: reflect call failed: " + eRefl.toString());
-        }
-
-        // Cap to 500 entries so the payload stays small.
-        if (names.length > 500) names.length = 500;
-        out.methods = names;
-
+        // Note: app.enableQE() is intentionally omitted because calling QE DOM
+        // causes severe host instability and access violation crashes in CC 2024-2026.
+        out.enabled = false;
+        out.methods = [];
         try { out.probed_at = (new Date()).getTime() / 1000.0; } catch (eT) { out.probed_at = 0; }
     } catch (e) {
         _ocLog("ocQeReflect error: " + e.toString());
