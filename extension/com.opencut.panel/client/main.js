@@ -2425,8 +2425,13 @@
             var pathsJson = JSON.stringify(paths);
             jsx("importFilesToProject('" + escSingleQuote(pathsJson) + "', \"" + escPath(bin || t("premiere.bin_output", "OpenCut Output")) + "\")", cb);
         },
-        importCaptions: function (path, cb) {
-            jsx('importCaptions("' + escPath(path) + '")', cb);
+        importCaptions: function (path, targetTrack, cb) {
+            if (typeof targetTrack === "function") {
+                cb = targetTrack;
+                targetTrack = "auto";
+            }
+            targetTrack = targetTrack || "auto";
+            jsx('importCaptions("' + escPath(path) + '", "' + targetTrack + '")', cb);
         },
         importFile: function (path, bin, cb) {
             jsx('importFileToProject("' + escPath(path) + '", "' + escPath(bin || t("premiere.bin_output", "OpenCut Output")) + '")', cb);
@@ -3905,7 +3910,7 @@
         "runAutoEditBtn", "runHighlightsBtn", "runEmotionHighlightsBtn", "runEnhanceBtn", "previewShortsPlanBtn", "runShortsBtn",
         "autoDetectWatermarkBtn", "runDepthBtn", "runBrollPlanBtn", "runBrollGenBtn", "runMmDiarizeBtn", "socialUploadBtn",
         "runRepeatDetectBtn", "runChaptersBtn", "runBeatMarkersBtn", "runBeatCutBtn", "runMulticamBtn",
-        "quickCleanInterview", "quickYouTube", "quickPodcast",
+        "quickCleanInterview", "quickPodcast",
         "polishInterviewBtn", "denoisePreviewBtn",
         "normalizePreviewBtn", "silencePreviewBtn",
         "quickAutoSubtitle", "quickTranslate",
@@ -3958,6 +3963,8 @@
         if (el.runBatchBtn) el.runBatchBtn.disabled = !connected || batchCandidateCount < 2;
         if (el.runLoudMatchBtn) el.runLoudMatchBtn.disabled = !connected || !hasProjectMedia;
         if (el.runFootageSearchBtn) el.runFootageSearchBtn.disabled = !connected;
+        var qYTEl = document.getElementById("quickYouTube");
+        if (qYTEl) qYTEl.disabled = !connected;
         if (el.runNlpCommandBtn) el.runNlpCommandBtn.disabled = !connected;
         if (el.generateLutBtn) el.generateLutBtn.disabled = !connected;
         if (el.testLLMBtn) el.testLLMBtn.disabled = !connected;
@@ -4850,7 +4857,8 @@
                         clipPath: selectedPath,
                         preview: { clips: selectedName ? [selectedName] : [], settings: { artifact: outputPath } }
                     }, function (cb) {
-                        PremiereBridge.importCaptions(outputPath, cb);
+                        var targetTrackVal = (document.getElementById("captionTargetTrack") || document.getElementById("subTargetTrack") || {}).value || "auto";
+                        PremiereBridge.importCaptions(outputPath, targetTrackVal, cb);
                     }, function (r) {
                         if (r.error) {
                             showAlert(replaceTemplateValue(t("toast.caption_import_error", "Caption import error: {error}"), "{error}", r.error));
@@ -4888,7 +4896,8 @@
                     clipPath: selectedPath,
                     preview: { clips: selectedName ? [selectedName] : [], settings: { artifact: srtPath } }
                 }, function (cb) {
-                    PremiereBridge.importCaptions(srtPath, cb);
+                    var targetTrackVal = (document.getElementById("captionTargetTrack") || document.getElementById("subTargetTrack") || {}).value || "auto";
+                    PremiereBridge.importCaptions(srtPath, targetTrackVal, cb);
                 }, function (r) {
                     if (r.error) {
                         showAlert(replaceTemplateValue(t("toast.caption_import_error", "Caption import error: {error}"), "{error}", r.error));
@@ -21165,7 +21174,7 @@
 
         var _stockCategories = {
             video: ["All", "Cinematic", "Nature", "Tech", "Urban", "Abstract", "Business"],
-            sfx: ["All", "Whoosh", "Impact / Boom", "Pop / Snap", "UI / Click", "Notification", "Riser"],
+            sfx: ["All", "Whoosh", "Impact / Boom", "Pop / Snap", "UI / Click", "Notification", "Riser", "Meme / Comedy", "Music / BGM", "Wikimedia Audio"],
             gif: ["All", "Shocked", "Success", "Funny", "Applause", "Confused", "Failure"]
         };
 
@@ -21235,7 +21244,7 @@
                 sBtn.style.color = "#22d3ee";
                 sBtn.style.border = "1px solid #22d3ee";
                 if (trackSelect) trackSelect.value = "audio:1";
-                if (searchInput) searchInput.placeholder = "Search whoosh, impact, click, pop, riser...";
+                if (searchInput) searchInput.placeholder = "Search whoosh, vine boom, bell, shutter, piano, lofi music...";
             } else if (mType === "gif" && gBtn) {
                 gBtn.className = "btn-xs pro-btn-primary";
                 gBtn.style.background = "rgba(34, 211, 238, 0.3)";
@@ -21426,9 +21435,27 @@
         function openYouTubeAgentModal() {
             var modal = document.getElementById("youtubeAgentModal");
             if (!modal) return;
+
+            // Auto-query timeline if no clip selected
+            if (!selectedPath && typeof jsx === "function") {
+                try {
+                    jsx("getSelectedClips", [], function(res) {
+                        try {
+                            var clips = typeof res === "string" ? JSON.parse(res) : res;
+                            if (Array.isArray(clips) && clips.length > 0 && clips[0].path) {
+                                selectedPath = clips[0].path;
+                                selectedName = clips[0].name || "";
+                                var pEl = document.getElementById("ytAgentSourcePath");
+                                if (pEl) pEl.textContent = selectedPath;
+                            }
+                        } catch (e) {}
+                    });
+                } catch (e) {}
+            }
+
             var pathEl = document.getElementById("ytAgentSourcePath");
             if (pathEl) {
-                pathEl.textContent = selectedPath || "(No clip selected — please select a clip or active sequence)";
+                pathEl.textContent = selectedPath || "(No clip selected — click 'Browse Video...' or 'Timeline Clip' above)";
             }
             var startBtn = document.getElementById("ytAgentStartBtn");
             if (startBtn) {
@@ -21610,6 +21637,56 @@
         var ytModalStart = document.getElementById("ytAgentStartBtn");
         var ytModalTimeline = document.getElementById("ytAgentTimelineBtn");
         var ytModalFolder = document.getElementById("ytAgentFolderBtn");
+
+        var ytAgentBrowseBtn = document.getElementById("ytAgentBrowseBtn");
+        var ytAgentPickSeqBtn = document.getElementById("ytAgentPickSeqBtn");
+        var ytAgentFileInput = document.getElementById("ytAgentFileInput");
+
+        if (ytAgentBrowseBtn && ytAgentFileInput) {
+            ytAgentBrowseBtn.addEventListener("click", function () {
+                ytAgentFileInput.click();
+            });
+        }
+
+        if (ytAgentFileInput) {
+            ytAgentFileInput.addEventListener("change", function (e) {
+                if (e.target.files && e.target.files.length > 0) {
+                    var file = e.target.files[0];
+                    selectedPath = file.path || file.name;
+                    selectedName = file.name || "Video File";
+                    var pEl = document.getElementById("ytAgentSourcePath");
+                    if (pEl) pEl.textContent = selectedPath;
+                    showToast("Loaded source clip: " + selectedName, "success");
+                    if (typeof updateButtons === "function") updateButtons();
+                }
+            });
+        }
+
+        if (ytAgentPickSeqBtn) {
+            ytAgentPickSeqBtn.addEventListener("click", function () {
+                if (typeof jsx !== "function") {
+                    showAlert("ExtendScript bridge unavailable.");
+                    return;
+                }
+                jsx("getSelectedClips", [], function (res) {
+                    try {
+                        var clips = typeof res === "string" ? JSON.parse(res) : res;
+                        if (Array.isArray(clips) && clips.length > 0 && clips[0].path) {
+                            selectedPath = clips[0].path;
+                            selectedName = clips[0].name || "";
+                            var pEl = document.getElementById("ytAgentSourcePath");
+                            if (pEl) pEl.textContent = selectedPath;
+                            showToast("Loaded timeline clip: " + selectedName, "success");
+                            if (typeof updateButtons === "function") updateButtons();
+                        } else {
+                            showAlert("No clip currently selected in Premiere sequence. Select a clip on your timeline or click 'Browse Video...' to pick a file.");
+                        }
+                    } catch (e) {
+                        showAlert("Could not resolve timeline clip: " + (e.message || e));
+                    }
+                });
+            });
+        }
 
         if (ytModalClose) ytModalClose.addEventListener("click", closeYouTubeAgentModal);
         if (ytModalStart) ytModalStart.addEventListener("click", runYouTubeAgentPipeline);

@@ -1737,8 +1737,9 @@ function _ocPlacementResult(mode, added, message, captionTrackIndex, videoTrackI
 }
 
 
-function _ocPlaceCaptionItemInSequence(seq, captionItem) {
+function _ocPlaceCaptionItemInSequence(seq, captionItem, targetTrackSpec) {
     var warnings = [];
+    targetTrackSpec = String(targetTrackSpec || "auto").toLowerCase();
     if (!seq) {
         return _ocPlacementResult(
             "project_import",
@@ -1762,49 +1763,88 @@ function _ocPlaceCaptionItemInSequence(seq, captionItem) {
         );
     }
 
-    try {
-        if (seq.captionTracks) {
-            var numCaptionTracks = 0;
-            try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e) {}
-
-            if (numCaptionTracks === 0) {
-                try { seq.addCaptionTrack(); } catch (e2) {
-                    warnings.push("caption_track_create_failed: " + e2.toString());
-                    _ocLog("Could not create caption track: " + e2.toString());
-                }
-            }
-
-            try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e3) {}
-            if (numCaptionTracks > 0) {
-                try {
-                    var captionTrack = seq.captionTracks[0];
-                    if (captionTrack) {
-                        captionTrack.insertClip(captionItem, new Time());
-                        return _ocPlacementResult(
-                            "native_caption_track",
-                            true,
-                            "Captions added to timeline caption track",
-                            0,
-                            null,
-                            "",
-                            warnings
-                        );
-                    }
-                } catch (e4) {
-                    warnings.push("caption_track_insert_failed: " + e4.toString());
-                    _ocLog("Caption track insert failed: " + e4.toString());
-                }
-            } else {
-                warnings.push("caption_track_unavailable");
-            }
-        } else {
-            warnings.push("caption_tracks_unavailable");
+    // 1. Explicit video track targeting (e.g. "v1", "v2", "v3", "v4", "v5")
+    var requestedVideoIdx = -1;
+    if (targetTrackSpec.indexOf("v") === 0) {
+        var num = parseInt(targetTrackSpec.replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(num) && num > 0) {
+            requestedVideoIdx = num - 1; // 1-based to 0-based
         }
-    } catch (e5) {
-        warnings.push("caption_tracks_unavailable: " + e5.toString());
-        _ocLog("captionTracks not available: " + e5.toString());
     }
 
+    if (requestedVideoIdx >= 0 && seq.videoTracks) {
+        try {
+            var vTargetTrack = null;
+            if (requestedVideoIdx < seq.videoTracks.numTracks) {
+                vTargetTrack = seq.videoTracks[requestedVideoIdx];
+            } else if (seq.videoTracks.numTracks > 0) {
+                vTargetTrack = seq.videoTracks[seq.videoTracks.numTracks - 1];
+            }
+            if (vTargetTrack) {
+                vTargetTrack.insertClip(captionItem, new Time());
+                return _ocPlacementResult(
+                    "video_track",
+                    true,
+                    "Captions added to video track V" + (requestedVideoIdx + 1),
+                    null,
+                    requestedVideoIdx,
+                    "video_track",
+                    warnings
+                );
+            }
+        } catch (eTrk) {
+            warnings.push("requested_video_track_failed: " + eTrk.toString());
+            _ocLog("Specific video track insert failed: " + eTrk.toString());
+        }
+    }
+
+    // 2. Native Caption Track
+    if (targetTrackSpec === "caption" || targetTrackSpec === "c1" || targetTrackSpec === "auto") {
+        try {
+            if (seq.captionTracks) {
+                var numCaptionTracks = 0;
+                try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e) {}
+
+                if (numCaptionTracks === 0) {
+                    try { seq.addCaptionTrack(); } catch (e2) {
+                        warnings.push("caption_track_create_failed: " + e2.toString());
+                        _ocLog("Could not create caption track: " + e2.toString());
+                    }
+                }
+
+                try { numCaptionTracks = seq.captionTracks.numTracks; } catch (e3) {}
+                if (numCaptionTracks > 0) {
+                    try {
+                        var captionTrack = seq.captionTracks[0];
+                        if (captionTrack) {
+                            captionTrack.insertClip(captionItem, new Time());
+                            return _ocPlacementResult(
+                                "native_caption_track",
+                                true,
+                                "Captions added to timeline caption track",
+                                0,
+                                null,
+                                "",
+                                warnings
+                            );
+                        }
+                    } catch (e4) {
+                        warnings.push("caption_track_insert_failed: " + e4.toString());
+                        _ocLog("Caption track insert failed: " + e4.toString());
+                    }
+                } else {
+                    warnings.push("caption_track_unavailable");
+                }
+            } else {
+                warnings.push("caption_tracks_unavailable");
+            }
+        } catch (e5) {
+            warnings.push("caption_tracks_unavailable: " + e5.toString());
+            _ocLog("captionTracks not available: " + e5.toString());
+        }
+    }
+
+    // 3. Fallback Video Track (Top empty track)
     try {
         if (seq.videoTracks && seq.videoTracks.numTracks > 0) {
             var targetTrackIdx = seq.videoTracks.numTracks - 1;
@@ -1864,7 +1904,7 @@ function _ocWarningsToString(warnings) {
  * @param {string} captionPath - Full file path to the .srt or .vtt file
  * @returns {string} JSON: caption import and placement result or {error}
  */
-function importCaptions(captionPath) {
+function importCaptions(captionPath, targetTrackSpec) {
     _ocLog("importCaptions: " + captionPath);
 
     if (!app || !app.project || !app.project.rootItem) {
@@ -1927,7 +1967,7 @@ function importCaptions(captionPath) {
         return JSON.stringify({ error: "Import failed. Your Premiere version may not support SRT import (requires v15+)." });
     }
 
-    var placement = _ocPlaceCaptionItemInSequence(seq, captionItem);
+    var placement = _ocPlaceCaptionItemInSequence(seq, captionItem, targetTrackSpec);
     var host = _ocHostVersionInfo();
     var captionPresenceAfter = _ocProjectPathPresence([captionPath]);
     var captionClipsAfter = _ocSequenceClipSnapshot(seq);
@@ -4529,7 +4569,7 @@ function ocAddNativeCaptionTrack(srtJSON) {
 
         try { seq = app.project.activeSequence; } catch (eSeq) { seq = null; }
 
-        var placement = _ocPlaceCaptionItemInSequence(seq, captionItem);
+        var placement = _ocPlaceCaptionItemInSequence(seq, captionItem, targetTrackSpec);
         for (var w = 0; w < warnings.length; w++) {
             placement.warnings.push(warnings[w]);
         }

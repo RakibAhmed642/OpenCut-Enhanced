@@ -816,15 +816,22 @@ def execute_youtube_ready_agent(
         probe_info=probe
     )
 
+    # Contextual Media Permissions (User Controlled)
+    allow_videos = options.get("ai_allow_videos", True)
+    allow_sfx = options.get("ai_allow_sfx", True)
+    allow_gifs = options.get("ai_allow_gifs", True)
+    allow_motion = options.get("ai_allow_motion", True)
+
     # 6. Render Track V2: Animated Motion Graphics Overlays (.mov RGBA)
     v2_output_path = str(out_dir / f"{base_name}_v2_motion.mov")
-    render_v2_motion_overlays(
-        motion_cards=ai_plan.get("motion_cards", []),
-        total_duration=total_dur,
-        output_mov_path=v2_output_path,
-        width=width,
-        height=height
-    )
+    if allow_motion and ai_plan.get("motion_cards"):
+        render_v2_motion_overlays(
+            motion_cards=ai_plan.get("motion_cards", []),
+            total_duration=total_dur,
+            output_mov_path=v2_output_path,
+            width=width,
+            height=height
+        )
 
     # 7. Render Track V3: Synced Kinetic Captions (.srt / .ass)
     v3_srt_path = str(out_dir / f"{base_name}_v3_captions.srt")
@@ -839,18 +846,13 @@ def execute_youtube_ready_agent(
     # 8. Render Audio Tracks: A1 Dialogue, A2 SFX Stem, A3 Music Bed
     audio_stems = render_audio_stems(
         filepath=v1_output_path if os.path.exists(v1_output_path) else str(input_p),
-        sfx_cues=ai_plan.get("sfx_cues", []),
+        sfx_cues=ai_plan.get("sfx_cues", []) if allow_sfx else [],
         total_duration=total_dur,
         output_dir=out_dir,
         base_name=base_name
     )
 
     # 8.5 Contextual Media Auto-Insertion (User Controlled)
-    allow_videos = options.get("ai_allow_videos", True)
-    allow_sfx = options.get("ai_allow_sfx", True)
-    allow_gifs = options.get("ai_allow_gifs", True)
-    allow_motion = options.get("ai_allow_motion", True)
-
     media_events = []
     planned_inserts = ai_plan.get("media_inserts", [])
     for ins in planned_inserts:
@@ -881,17 +883,13 @@ def execute_youtube_ready_agent(
         except Exception as mie:
             sys.stderr.write(f"[YouTube Agent] Notice downloading media insert: {mie}\n")
 
-    # If user disabled motion cards, skip intro hook card overlay
-    if not allow_motion:
-        v2_final = None
-
     # If user disabled SFX, clear SFX stem
     if not allow_sfx:
         audio_stems["sfx_stem"] = None
 
     # 9. Verify Multi-Track Deliverables
     v1_final = v1_output_path if os.path.exists(v1_output_path) else str(input_p)
-    v2_final = v2_output_path if os.path.exists(v2_output_path) else None
+    v2_final = v2_output_path if (allow_motion and os.path.exists(v2_output_path)) else None
     srt_final = v3_srt_path if os.path.exists(v3_srt_path) and os.path.getsize(v3_srt_path) > 0 else None
 
     # Calculate final edited duration

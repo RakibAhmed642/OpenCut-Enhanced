@@ -337,7 +337,7 @@
                         </span>
                         <span class="quick-action-tag" aria-hidden="true" data-i18n="quick_actions.preset_tag">Preset</span>
                     </button>
-                    <button type="button" class="quick-action-btn" id="quickYouTube" disabled title="Autonomous AI YouTube Video Editor & Multi-Track Assembly" data-i18n-title="quick_actions.youtube_title">
+                    <button type="button" class="quick-action-btn" id="quickYouTube" title="Autonomous AI YouTube Video Editor & Multi-Track Assembly" data-i18n-title="quick_actions.youtube_title">
                         <span class="quick-action-head">
                             <span class="quick-action-icon" aria-hidden="true" style="color: #22d3ee;">
                                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="13" height="11" rx="2.5"/><path d="m8.5 8 4 2-4 2z"/></svg>
@@ -1570,7 +1570,14 @@
 
                                     <div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
                                         <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 10px 12px;">
-                                            <div style="font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Target Sequence / Source Clip</div>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                <span style="font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">Target Sequence / Source Clip</span>
+                                                <div style="display: flex; gap: 5px;">
+                                                    <button type="button" id="ytAgentPickSeqBtn" class="btn-secondary pro-btn-secondary btn-xs" style="padding: 2px 7px; font-size: 10px; border-radius: 4px; cursor: pointer;" title="Use Active Sequence Clip">Timeline Clip</button>
+                                                    <button type="button" id="ytAgentBrowseBtn" class="btn-secondary pro-btn-secondary btn-xs" style="padding: 2px 7px; font-size: 10px; border-radius: 4px; cursor: pointer;">Browse Video...</button>
+                                                </div>
+                                            </div>
+                                            <input type="file" id="ytAgentFileInput" accept="video/*" style="display: none;">
                                             <div id="ytAgentSourcePath" style="font-size: 12px; font-weight: 600; color: #f1f5f9; word-break: break-all; font-family: monospace;">-</div>
                                         </div>
 
@@ -2059,6 +2066,18 @@
                             <label for="actionWordsInput"><span data-i18n="captions.custom_action_words">Custom Action Words</span> <span class="hint-inline" data-i18n="common.comma_separated">(comma-separated)</span></label>
                             <input type="text" id="actionWordsInput" placeholder="e.g. amazing, subscribe, click" data-i18n-placeholder="captions.action_words_placeholder" class="text-input">
                         </div>
+                        <div class="form-group">
+                            <label for="captionTargetTrack"><span data-i18n="captions.target_track">Target Track</span></label>
+                            <select id="captionTargetTrack">
+                                <option value="auto" selected>Auto (Smart Track Fallback)</option>
+                                <option value="v3">V3 (Standard Subtitles Track)</option>
+                                <option value="v1">V1 (Main Video Track)</option>
+                                <option value="v2">V2 (Overlay Track)</option>
+                                <option value="v4">V4 (High Overlay Track)</option>
+                                <option value="v5">V5 (Top Graphics Track)</option>
+                                <option value="caption">Caption Track (Premiere Subtitle Stream)</option>
+                            </select>
+                        </div>
                         <button type="button" class="btn-primary" id="runStyledCaptionsBtn" disabled title="Select media to enable caption generation" data-i18n="captions.generate_styled">Create Captions</button>
                         <div class="hint hidden" id="captionsHint">
                             <span data-i18n="captions.whisper_not_installed">Whisper not installed.</span>
@@ -2104,6 +2123,18 @@
                                 <option value="vtt" data-i18n="formats.webvtt">WebVTT</option>
                                 <option value="ass" data-i18n="formats.ass_karaoke">ASS (Karaoke)</option>
                                 <option value="json" data-i18n="formats.json_word_level">JSON (Word-level)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subTargetTrack"><span data-i18n="captions.target_track">Target Track</span></label>
+                            <select id="subTargetTrack">
+                                <option value="auto" selected>Auto (Smart Track Fallback)</option>
+                                <option value="v3">V3 (Standard Subtitles Track)</option>
+                                <option value="v1">V1 (Main Video Track)</option>
+                                <option value="v2">V2 (Overlay Track)</option>
+                                <option value="v4">V4 (High Overlay Track)</option>
+                                <option value="v5">V5 (Top Graphics Track)</option>
+                                <option value="caption">Caption Track (Premiere Subtitle Stream)</option>
                             </select>
                         </div>
                         <button type="button" class="btn-primary" id="runSubtitleBtn" disabled data-i18n="captions.subtitle_export">Export Subs</button>

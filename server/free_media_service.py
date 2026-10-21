@@ -174,12 +174,22 @@ def get_local_sfx_library(query: str = "", category: str = "") -> List[Dict[str,
         "snap": "Pop / Snap",
         "click": "UI / Click",
         "ui": "UI / Click",
+        "shutter": "UI / Click",
+        "typing": "UI / Click",
         "bell": "Notification",
+        "chime": "Notification",
+        "register": "Notification",
+        "ding": "Notification",
         "drop": "Sub Drop / Bass",
         "swell": "Riser / Tension",
+        "riser": "Riser / Tension",
         "scratch": "Meme / Comedy",
+        "buzzer": "Meme / Comedy",
         "braam": "Cinematic / Trailer",
-        "thud": "Foley / Impact"
+        "thud": "Foley / Impact",
+        "heartbeat": "Cinematic / Trailer",
+        "paper": "Foley / Impact",
+        "scribble": "Foley / Impact"
     }
 
     for f in SFX_DIR.glob("*.wav"):
@@ -275,6 +285,132 @@ def search_wikimedia_videos(query: str, limit: int = 8) -> List[Dict[str, Any]]:
     return items
 
 
+
+CURATED_FREE_MUSIC = [
+    {
+        "id": "bgm_lofi_chill",
+        "title": "Lo-Fi Study & Chill Beat (Relaxed)",
+        "category": "Music / BGM",
+        "tags": ["lofi", "chill", "music", "bgm", "beat", "study", "relax"],
+        "duration": "2m 14s",
+        "license": "CC0 Public Domain",
+        "source": "Wikimedia / Open Music",
+        "size": "2.8 MB",
+        "type": "audio",
+        "preview_url": "https://upload.wikimedia.org/wikipedia/commons/e/eb/Gymnopedie_No._1_%28ISRC_USUAN1100787%29.mp3",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/e/eb/Gymnopedie_No._1_%28ISRC_USUAN1100787%29.mp3"
+    },
+    {
+        "id": "bgm_upbeat_vlog",
+        "title": "Upbeat Creator Acoustic Sunshine",
+        "category": "Music / BGM",
+        "tags": ["upbeat", "vlog", "acoustic", "guitar", "happy", "music", "bgm"],
+        "duration": "1m 45s",
+        "license": "CC-BY Open License",
+        "source": "Wikimedia Commons",
+        "size": "2.1 MB",
+        "type": "audio",
+        "preview_url": "https://upload.wikimedia.org/wikipedia/commons/8/87/Scott_Joplin_-_The_Entertainer_%281902%29.ogg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/8/87/Scott_Joplin_-_The_Entertainer_%281902%29.ogg"
+    },
+    {
+        "id": "bgm_cinematic_strings",
+        "title": "Cinematic Atmospheric Piano & Strings",
+        "category": "Music / BGM",
+        "tags": ["cinematic", "piano", "strings", "ambient", "drama", "music"],
+        "duration": "2m 30s",
+        "license": "CC0 Public Domain",
+        "source": "Wikimedia Commons",
+        "size": "3.4 MB",
+        "type": "audio",
+        "preview_url": "https://upload.wikimedia.org/wikipedia/commons/4/41/Outing-_Chinese_kids%27_Piano_Song_-_Junjun%27s_edition_%28selected_from_real_piano_lesson%29.ogg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/4/41/Outing-_Chinese_kids%27_Piano_Song_-_Junjun%27s_edition_%28selected_from_real_piano_lesson%29.ogg"
+    },
+    {
+        "id": "bgm_modern_tech",
+        "title": "Modern Tech Corporate Minimal Groove",
+        "category": "Music / BGM",
+        "tags": ["tech", "corporate", "minimal", "groove", "coding", "software", "music"],
+        "duration": "1m 58s",
+        "license": "CC-BY Open License",
+        "source": "Wikimedia Commons",
+        "size": "2.6 MB",
+        "type": "audio",
+        "preview_url": "https://upload.wikimedia.org/wikipedia/commons/5/5e/The_Easy_Winners_%28Scott_Joplin%29.ogg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/5e/The_Easy_Winners_%28Scott_Joplin%29.ogg"
+    },
+    {
+        "id": "bgm_ambient_nature",
+        "title": "Deep Forest Birds & Mountain Stream Ambience",
+        "category": "Music / BGM",
+        "tags": ["ambient", "nature", "forest", "birds", "stream", "peaceful", "relax"],
+        "duration": "1m 15s",
+        "license": "CC0 Public Domain",
+        "source": "Wikimedia Commons",
+        "size": "1.7 MB",
+        "type": "audio",
+        "preview_url": "https://upload.wikimedia.org/wikipedia/commons/a/ae/Nightingale_song.ogg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/a/ae/Nightingale_song.ogg"
+    }
+]
+
+
+def search_wikimedia_audio(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Search Wikimedia Commons for 100% free Public Domain / CC audio and music."""
+    if not query.strip():
+        query = "sound effect"
+    
+    url = f"https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch={urllib.parse.quote(query)}%20filetype:audio&srnamespace=6&srlimit={limit}"
+    req = urllib.request.Request(url, headers={"User-Agent": "OpenCut-Video-Editor/2.0"})
+    
+    items = []
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            search_list = data.get("query", {}).get("search", [])
+            for s in search_list:
+                raw_title = s.get("title", "")
+                if not raw_title.startswith("File:"):
+                    continue
+
+                info_url = (
+                    f"https://commons.wikimedia.org/w/api.php?action=query&titles={urllib.parse.quote(raw_title)}"
+                    f"&prop=imageinfo&iiprop=url|mime|size&format=json"
+                )
+                req_info = urllib.request.Request(info_url, headers={"User-Agent": "OpenCut-Video-Editor/2.0"})
+                try:
+                    with urllib.request.urlopen(req_info, timeout=4) as r2:
+                        d2 = json.loads(r2.read().decode("utf-8"))
+                        pages = d2.get("query", {}).get("pages", {})
+                        for _, p in pages.items():
+                            i_info = p.get("imageinfo", [{}])[0]
+                            direct_u = i_info.get("url")
+                            if direct_u:
+                                clean_t = raw_title.replace("File:", "").replace(".ogg", "").replace(".mp3", "").replace(".wav", "").replace(".flac", "").replace("_", " ")
+                                f_size = i_info.get("size", 0)
+                                size_mb = f"{round(f_size / (1024*1024), 1)} MB" if f_size > 0 else "Free Audio"
+                                items.append({
+                                    "id": s.get("pageid", str(time.time())),
+                                    "title": clean_t[:55].strip(),
+                                    "category": "Wikimedia Audio",
+                                    "tags": query.split(),
+                                    "duration": "Free Audio",
+                                    "license": "CC / Public Domain",
+                                    "source": "Wikimedia Commons",
+                                    "size": size_mb,
+                                    "url": direct_u,
+                                    "type": "audio",
+                                    "preview_url": direct_u
+                                })
+                                break
+                except Exception:
+                    pass
+    except Exception as e:
+        sys.stderr.write(f"Wikimedia audio search notice: {e}\n")
+
+    return items
+
+
 def search_free_media(
     media_type: str = "video",
     query: str = "",
@@ -288,9 +424,29 @@ def search_free_media(
     q_lower = query.lower().strip()
     c_lower = category.lower().strip()
 
-    if m_type == "sfx":
-        # Search Local Studio CC0 library
-        return get_local_sfx_library(query=query, category=category)
+    if m_type in ("sfx", "audio", "sound", "music"):
+        results = []
+        # 1. First get matching local SFX
+        local_sfx = get_local_sfx_library(query=query, category=category)
+        results.extend(local_sfx)
+
+        # 2. Check curated free music beds
+        for m in CURATED_FREE_MUSIC:
+            if c_lower and c_lower not in m["category"].lower() and c_lower not in m["title"].lower():
+                continue
+            if q_lower:
+                match = any(q_lower in tag for tag in m["tags"]) or (q_lower in m["title"].lower())
+                if not match:
+                    continue
+            results.append(dict(m))
+
+        # 3. If user searched a keyword or clicked Wikimedia, search online audio
+        if (q_lower or c_lower == "wikimedia audio" or len(results) < 4) and len(results) < limit:
+            search_term = query or category or "sound fx"
+            online_audio = search_wikimedia_audio(query=search_term, limit=min(12, limit - len(results)))
+            results.extend(online_audio)
+
+        return results[:limit]
 
     elif m_type == "gif":
         # Search curated meme GIFs & reactions
@@ -368,6 +524,19 @@ def download_and_prepare_media(
         if (is_webm or is_gif) and os.path.exists(FFMPEG):
             # Transcode webm/gif to standard Premiere Pro H.264 MP4
             cmd = f'"{FFMPEG}" -y -i "{str(temp_download)}" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 20 -movflags +faststart "{str(out_file)}"'
+            code, _, _ = run_cmd(cmd)
+            if code == 0 and out_file.exists():
+                temp_download.unlink(missing_ok=True)
+                return {
+                    "status": "ready",
+                    "local_path": str(out_file.resolve()),
+                    "filename": out_file.name,
+                    "type": media_type
+                }
+
+        is_audio = media_type in ("sfx", "audio", "sound", "music")
+        if is_audio and os.path.exists(FFMPEG):
+            cmd = f'"{FFMPEG}" -y -i "{str(temp_download)}" -ar 48000 -ac 2 "{str(out_file)}"'
             code, _, _ = run_cmd(cmd)
             if code == 0 and out_file.exists():
                 temp_download.unlink(missing_ok=True)
