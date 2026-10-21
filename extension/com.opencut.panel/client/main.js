@@ -21395,9 +21395,9 @@
         var _currentStockCategory = "";
 
         var _stockCategories = {
-            video: ["All", "Cinematic", "Nature", "Tech", "Urban", "Abstract", "Business"],
-            sfx: ["All", "Whoosh", "Impact / Boom", "Pop / Snap", "UI / Click", "Notification", "Riser", "Meme / Comedy", "Music / BGM", "Wikimedia Audio"],
-            gif: ["All", "Shocked", "Success", "Funny", "Applause", "Confused", "Failure"]
+            video: ["All", "Cinematic", "Nature", "Tech", "Urban", "Abstract", "Timelapse", "Space", "Ocean"],
+            sfx: ["All", "Whoosh", "Impact / Boom", "Pop / Snap", "UI / Click", "Notification", "Riser", "Meme / Comedy", "Foley", "Cinematic", "Music / BGM", "Wikimedia Audio"],
+            gif: ["All", "Trending", "Shocked", "Funny", "Dancing", "Crying", "Rage", "Success", "Confused", "Applause", "Meme", "Anime", "Cat / Dog"]
         };
 
         function renderStockCategoryPills(mType) {
@@ -21473,7 +21473,7 @@
                 gBtn.style.color = "#22d3ee";
                 gBtn.style.border = "1px solid #22d3ee";
                 if (trackSelect) trackSelect.value = "video:1";
-                if (searchInput) searchInput.placeholder = "Search mindblown, clap, reaction memes...";
+                if (searchInput) searchInput.placeholder = "Search trending reaction memes, pop cat, laugh, dance, rage...";
             }
 
             renderStockCategoryPills(mType);
@@ -21493,7 +21493,8 @@
 
             var url = "http://127.0.0.1:5682/media/search?type=" + encodeURIComponent(_currentStockType) +
                       "&q=" + encodeURIComponent(query) +
-                      "&category=" + encodeURIComponent(_currentStockCategory);
+                      "&category=" + encodeURIComponent(_currentStockCategory) +
+                      "&limit=30";
 
             fetch(url)
                 .then(function (r) { return r.json(); })
@@ -21543,7 +21544,7 @@
 
                         var metaRow = document.createElement("div");
                         metaRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; font-size: 9.5px;";
-                        metaRow.innerHTML = '<span style="color: #64748b; font-weight: 600;">' + (item.category || item.source) + '</span><span style="color: #4ade80; font-weight: 700;">' + (item.license.indexOf("CC0") !== -1 ? "CC0 Free" : "Free") + '</span>';
+                        metaRow.innerHTML = '<span style="color: #64748b; font-weight: 600;">' + (item.category || item.source) + '</span><span style="color: #4ade80; font-weight: 700;">' + ((item.license && item.license.indexOf("CC0") !== -1) ? "CC0 Free" : (item.license || "Free")) + '</span>';
                         body.appendChild(metaRow);
 
                         // Actions Row: Preview & Insert Buttons
