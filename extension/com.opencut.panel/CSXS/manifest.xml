@@ -30,10 +30,7 @@
                     <ScriptPath>./host/index.jsx</ScriptPath>
                     <CEFCommandLine>
                         <Parameter>--high-dpi-support=1</Parameter>
-                        <Parameter>--disable-gpu</Parameter>
-                        <Parameter>--disable-gpu-compositing</Parameter>
                         <Parameter>--disable-accelerated-video-decode</Parameter>
-                        <Parameter>--disable-accelerated-2d-canvas</Parameter>
                     </CEFCommandLine>
                 </Resources>
                 <Lifecycle>
