@@ -216,31 +216,21 @@ function _normalizeMediaPath(path) {
 }
 
 function _collectProjectMedia(root, maxAttempts, delayMs) {
-    var attempts = 0;
-    var rootChildren = 0;
+    var rootChildren = _getProjectChildCount(root);
     var items = [];
-    if (!maxAttempts || maxAttempts < 1) maxAttempts = 1;
-    if (!delayMs || delayMs < 0) delayMs = 0;
-
-    while (attempts < maxAttempts) {
-        attempts++;
-        rootChildren = _getProjectChildCount(root);
-        items = [];
+    if (rootChildren > 0) {
         _walkProjectItems(root, items, {}, 0);
-        if (items.length > 0) break;
-        if (rootChildren === 0 || attempts >= maxAttempts) break;
-        if (delayMs > 0) $.sleep(delayMs);
     }
-
     return {
         items: items,
         rootChildren: rootChildren,
-        attempts: attempts
+        attempts: 1
     };
 }
 
 function _walkProjectItems(parent, items, seenPaths, depth) {
     if (depth > 20) return;
+    if (items && items.length >= 250) return;
     var numChildren = _getProjectChildCount(parent);
     if (!numChildren) return;
 
@@ -2877,210 +2867,8 @@ function importCaptionOverlay(overlayPath) {
  * @returns {string} JSON: {success, message} or {error}
  */
 function startOpenCutBackend() {
-    _ocLog("startOpenCutBackend called");
-
-    var isWindows = ($.os.indexOf("Windows") !== -1);
-
-    // --- Try to find the installed exe ---
-    var exePath = "";
-
-    if (isWindows) {
-        // Check registry for install path (set by installer)
-        try {
-            var wsh = new ActiveXObject("WScript.Shell");
-            var regPath = wsh.RegRead("HKCU\\Software\\OpenCut\\InstallPath");
-            if (regPath) {
-                // Custom installer puts exe in server\ subdir
-                var candidate = regPath + "\\server\\OpenCut-Server.exe";
-                if (new File(candidate).exists) {
-                    exePath = candidate;
-                    _ocLog("Found exe via registry: " + exePath);
-                }
-                // Fallback: exe in install root (legacy layout)
-                if (!exePath) {
-                    candidate = regPath + "\\OpenCut-Server.exe";
-                    if (new File(candidate).exists) {
-                        exePath = candidate;
-                        _ocLog("Found exe via registry (root): " + exePath);
-                    }
-                }
-            }
-        } catch (e) {
-            _ocLog("Registry lookup failed (normal if not installed): " + e.toString());
-        }
-
-        // Check default install location
-        if (!exePath) {
-            try {
-                var progFiles = $.getenv("ProgramFiles");
-                if (progFiles) {
-                    var candidate2 = progFiles + "\\OpenCut\\server\\OpenCut-Server.exe";
-                    if (new File(candidate2).exists) {
-                        exePath = candidate2;
-                        _ocLog("Found exe at Program Files: " + exePath);
-                    }
-                }
-            } catch (e2) {}
-        }
-
-        // Check workspace and standard root locations
-        if (!exePath) {
-            var rootCandidates = [
-                "E:\\autocut\\server\\OpenCut-Server.exe",
-                "C:\\autocut\\server\\OpenCut-Server.exe",
-                "D:\\autocut\\server\\OpenCut-Server.exe"
-            ];
-            for (var rci = 0; rci < rootCandidates.length; rci++) {
-                if (new File(rootCandidates[rci]).exists) {
-                    exePath = rootCandidates[rci];
-                    _ocLog("Found exe at root candidate: " + exePath);
-                    break;
-                }
-            }
-        }
-    }
-
-    var launched = false;
-
-    if (isWindows) {
-        // ---- WINDOWS ----
-        // Check for unified launcher VBS
-        var launcherVbs = "";
-        var vbsCandidates = [
-            "E:\\autocut\\OpenCut-Launcher.vbs",
-            "C:\\autocut\\OpenCut-Launcher.vbs",
-            (exePath ? (new File(exePath).parent.parent.fsName + "\\OpenCut-Launcher.vbs") : "")
-        ];
-        for (var vi = 0; vi < vbsCandidates.length; vi++) {
-            if (vbsCandidates[vi] && new File(vbsCandidates[vi]).exists) {
-                launcherVbs = vbsCandidates[vi];
-                break;
-            }
-        }
-
-        // Build a batch file that kills old server, then launches new
-        var bat = new File(Folder.temp.fsName + "/opencut_start.bat");
-        if (!bat.open("w")) {
-            return JSON.stringify({ error: "Cannot write startup script to temp folder" });
-        }
-        try {
-            bat.writeln("@echo off");
-            bat.writeln("setlocal");
-            // Kill via PID file
-            bat.writeln('set "PIDFILE=%USERPROFILE%\\.opencut\\server.pid"');
-            bat.writeln('if exist "%PIDFILE%" (');
-            bat.writeln('    set /p OLDPID=<"%PIDFILE%"');
-            bat.writeln('    if defined OLDPID (');
-            bat.writeln('        taskkill /F /T /PID %OLDPID% >nul 2>&1');
-            bat.writeln('    )');
-            bat.writeln('    del "%PIDFILE%" >nul 2>&1');
-            bat.writeln(')');
-            // Kill anything holding port 5679
-            bat.writeln('for /f "tokens=5" %%a in (\'netstat -ano -p TCP ^| findstr ":5679 " ^| findstr "LISTENING"\') do (');
-            bat.writeln('    taskkill /F /T /PID %%a >nul 2>&1');
-            bat.writeln(')');
-            // Kill anything holding port 5682
-            bat.writeln('for /f "tokens=5" %%b in (\'netstat -ano -p TCP ^| findstr ":5682 " ^| findstr "LISTENING"\') do (');
-            bat.writeln('    taskkill /F /T /PID %%b >nul 2>&1');
-            bat.writeln(')');
-            bat.writeln("timeout /t 1 /nobreak >nul 2>&1");
-
-            if (launcherVbs) {
-                // Unified silent launcher handles both Core Server (5679) & Sound Designer/Reels (5682)
-                bat.writeln('wscript.exe "' + launcherVbs + '"');
-            } else if (exePath) {
-                // Launch Sound Designer (5682) in background if Python available
-                bat.writeln('if exist "C:\\Python313\\python.exe" (');
-                bat.writeln('    if exist "E:\\autocut\\server\\sound_designer_service.py" (');
-                bat.writeln('        start /b "" "C:\\Python313\\python.exe" "E:\\autocut\\server\\sound_designer_service.py" >nul 2>&1');
-                bat.writeln('    )');
-                bat.writeln(')');
-                // Launch the installed exe (sanitize path against injection)
-                var safePath = exePath.replace(/[&|<>^%"]/g, "");
-                bat.writeln('"' + safePath + '"');
-            } else {
-                bat.writeln('if exist "C:\\Python313\\python.exe" (');
-                bat.writeln('    if exist "E:\\autocut\\server\\sound_designer_service.py" (');
-                bat.writeln('        start /b "" "C:\\Python313\\python.exe" "E:\\autocut\\server\\sound_designer_service.py" >nul 2>&1');
-                bat.writeln('    )');
-                bat.writeln(')');
-                // Fall back to python -m (dev mode)
-                var pythonCmds = ["python", "python3", "py"];
-                for (var i = 0; i < pythonCmds.length; i++) {
-                    bat.writeln(pythonCmds[i] + ' -m opencut.server 2>nul && goto :done');
-                }
-                bat.writeln(":done");
-            }
-        } finally {
-            bat.close();
-        }
-
-        try {
-            bat.execute();
-            launched = true;
-            _ocLog("Launched via bat" + (exePath ? " (exe)" : " (python fallback)"));
-        } catch (e3) {
-            _ocLog("Bat launch failed: " + e3.toString());
-        }
-    } else {
-        // ---- macOS / Linux ----
-        // Write the startup script
-        var shPath = Folder.temp.fsName + "/opencut_start.sh";
-        var sh = new File(shPath);
-        if (!sh.open("w")) {
-            return JSON.stringify({ error: "Cannot write startup script to temp folder" });
-        }
-        try {
-            sh.writeln("#!/bin/bash");
-            // Kill via PID file
-            sh.writeln('PIDFILE="$HOME/.opencut/server.pid"');
-            sh.writeln('if [ -f "$PIDFILE" ]; then');
-            sh.writeln('    OLDPID=$(head -1 "$PIDFILE" 2>/dev/null)');
-            sh.writeln('    [ -n "$OLDPID" ] && kill -9 "$OLDPID" 2>/dev/null');
-            sh.writeln('    rm -f "$PIDFILE"');
-            sh.writeln('fi');
-            // Kill anything on port 5679
-            sh.writeln('for PID in $(lsof -ti :5679 2>/dev/null); do kill -9 "$PID" 2>/dev/null; done');
-            sh.writeln("sleep 1");
-            // Launch
-            sh.writeln("nohup python3 -m opencut.server > /dev/null 2>&1 &");
-        } finally {
-            sh.close();
-        }
-
-        try {
-            // File.execute() on macOS opens .sh files in a text editor.
-            // Use system.callSystem (or app.system) to run bash directly.
-            var cmd = '/bin/bash -c \'chmod +x "' + shPath + '" && "' + shPath + '"\'';
-            if (typeof app.system === "function") {
-                app.system(cmd);
-                launched = true;
-            } else {
-                // Fallback: use a .command file which Terminal.app can run
-                var cmdFile = new File(Folder.temp.fsName + "/opencut_start.command");
-                if (!cmdFile.open("w")) {
-                    return JSON.stringify({ error: "Cannot write startup script to temp folder" });
-                }
-                try {
-                    cmdFile.writeln("#!/bin/bash");
-                    cmdFile.writeln('chmod +x "' + shPath + '" && "' + shPath + '"');
-                    cmdFile.writeln("exit 0");
-                } finally {
-                    cmdFile.close();
-                }
-                cmdFile.execute();
-                launched = true;
-            }
-            _ocLog("Launched via sh (python)");
-        } catch (e4) {
-            _ocLog("Sh launch failed: " + e4.toString());
-        }
-    }
-
-    if (launched) {
-        return JSON.stringify({ success: true, message: "Backend launch attempted" + (exePath ? " (installed)" : " (dev)") });
-    }
-    return JSON.stringify({ error: "Could not launch backend. Start manually: python -m opencut.server" });
+    _ocLog("startOpenCutBackend: process launch handled safely by CEP background process");
+    return JSON.stringify({ success: true, message: "Backend management handled by CEP" });
 }
 
 

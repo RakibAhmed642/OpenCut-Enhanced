@@ -9,7 +9,7 @@
     var BACKEND_BASE_PORT = 5679;
     var BACKEND_MAX_PORT = 5689;
     var POLL_MS = 700;
-    var HEALTH_MS = 4000;
+    var HEALTH_MS = 6000;
     var CHECKPOINT_MIN_BACKEND_VERSION = "1.42.0";
     var SSE_OK = typeof EventSource !== "undefined";
     var PanelUtils = (typeof window !== "undefined" && window.OpenCutPanelUtils) ? window.OpenCutPanelUtils : {}; var OpenCutGpuSelectionController = (typeof window !== "undefined" && window.OpenCutGpuSelectionController) ? window.OpenCutGpuSelectionController : {};
@@ -165,7 +165,7 @@
     // after the first disconnect/reconnect cycle the media scan and system
     // status bar would stop polling forever. Called from checkHealth() on
     // every reconnect and from the DOMContentLoaded bootstrap.
-    var MEDIA_POLL_MS = 20000; // 20 seconds
+    var MEDIA_POLL_MS = 30000; // 30 seconds
     function startBackgroundPollers() {
         if (!mediaScanTimer) {
             mediaScanTimer = setInterval(function () {
@@ -15156,7 +15156,7 @@
     // ================================================================
     // NOTE: _statusTimer is declared once at module scope (line ~49) so
     // cleanupTimers() can clear it. Do NOT redeclare it here.
-    var _STATUS_POLL_MS = 5000;
+    var _STATUS_POLL_MS = 8000;
 
     var _statusBarRetries = 0;
     function initStatusBar() {
@@ -21294,26 +21294,29 @@
         if (healthTimer) clearInterval(healthTimer);
         healthTimer = setInterval(checkHealth, HEALTH_MS);
 
-        // Scan project media and populate recent files
-        scanProjectMedia();
-        populateRecentFiles();
+        // Non-blocking initial media scan delayed by 1500ms to allow Premiere Pro to stabilize
+        setTimeout(function () {
+            scanProjectMedia();
+            populateRecentFiles();
+        }, 1500);
 
-        // Periodic soft re-scan: picks up media imported outside OpenCut
-        // (e.g. user dragging files into Premiere, or Media Browser imports).
-        // Shared helper so the reconnect path can restart this after
-        // cleanupTimers() kills it on disconnect.
+        // Periodic soft re-scan
         startBackgroundPollers();
 
-        // Re-scan when panel regains focus or becomes visible
-        document.addEventListener("visibilitychange", function () {
-            if (!document.hidden && (inPremiere || connected)) {
+        // Throttled re-scan when panel regains focus or becomes visible (min 15s interval)
+        var _lastFocusScan = Date.now();
+        function _throttledFocusScan() {
+            var now = Date.now();
+            if (now - _lastFocusScan > 15000 && jobRuntime.isIdle() && (inPremiere || connected)) {
+                _lastFocusScan = now;
                 scanProjectMedia();
             }
+        }
+        document.addEventListener("visibilitychange", function () {
+            if (!document.hidden) _throttledFocusScan();
         });
         window.addEventListener("focus", function () {
-            if (jobRuntime.isIdle() && (inPremiere || connected)) {
-                scanProjectMedia();
-            }
+            _throttledFocusScan();
         });
 
         // Load style preview data
